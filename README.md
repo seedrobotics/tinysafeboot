@@ -17,17 +17,18 @@ If using this tool to read code from your processor, beware that it has a bug wh
 This new loader has several advantages:
 <ul><li>You can specify the device password on the command line, thus eliminating the timeout in the original version</li>
 <li>Communication relies on the OS buffers to detect arrival of device replies, which makes this code significantly faster
-to run (for example at 19 200 bps) it can be up to 5x faster than tsb_original.
-<li>Extremely evrbose output: in case of error you are told exactly what is wrong
+to run (for example at 19 200 bps it can be up to 5x faster than tsb_original, which uses hard coded wait times).
+<li>Extremely verbose output: in case of error you are told exactly what is wrong
 <li>Ability to perform multiple operations in one single TSB session (for example, a firmware erase/write/verify in one go).<br/>
 In the original TSB Loader, you need to reset the processor and start a new TSB session for each individual operation.</li>
 <li>Configurable pre_wait times and reply_timeout times makes it extremely versatile when dealing with self resetting boards (like Arduino)</li>
-<li>Automaticaly repeatable operations for multiple devices: if you have devices on a daisay chain (connected in paralel) with unique passwords,
+<li>Automatically repeatable operations for multiple devices: if you have devices on a daisy chain (connected in parallel) with unique passwords,
 you can enter a list of device passwords and all operations are performed on all of them at once (your board needs to have an auto reset capability
 based on DTR transitions, similar to the Arduino implementation)</li>
 <li>It includes a clever work around to overcome the bug on Daisy chain operation where silent devices might escape the "wrong password" lock
 and go into Emergency Erase confirm mode and subsequently boot.<br/>
 While the fix does not prevent them from booting, it forces the devices out of the "wrong password lock" before initiating any communication
 in order to prevent interferences from the Emergency erase confirmation.</li>
+<li>What it does NOT DO: it will not produce the TSB binaries to load on your ATMEGA/ATTINY device. If you need that feature, please use TSB original.</li>
 </ul>
 </ul>

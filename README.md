@@ -8,12 +8,14 @@ Everyone is welcome to expand on this excellent work.
 
 <p>Git repository structure:</p>
 <ul>
-<li>firmware_ASM: includes the firmware part to be installed on the ATMEGA and ATTINY devices using ICSP</li>
-<li>software/tsb_loader_original: the original TSB Loader written by Julien Thomas in FreeBasic.<br/>
+<li><b>firmware_ASM/original_FW</b>: includes the firmware part to be installed on the ATMEGA and ATTINY devices using ICSP, originally written by Julien Thomas.<br/>
+This implementation has a bug when operating in Daisy chain (multiple devices connected in parallel). See issue #1</li>
+<li><b>firmware_ASM/release_20170626</b>: a bugfix attempt at resolving Issue #1. It has not yet been thoroughly tested.</li>
+<li><b>software/tsb_loader_original</b>: the original TSB Loader written by Julien Thomas in FreeBasic.<br/>
 You can use this program to produce TSB binaries for your processor without needing to use an ATMEL assembler.<br/>
 If using this tool to read code from your processor, beware that it has a bug when saving to BIN files 
 (it won't save the last byte); save to Intel HEX instead which does not have this issue.</li>
-<li>software/tsb_loader2: a completely re written TSB loader in Mono (C#) for cross platform compatibility.<br/>
+<li><b>software/tsb_loader2</b>: a completely re written TSB loader in Mono (C#) for cross platform compatibility.<br/>
 This new loader has several advantages:
 <ul><li>You can specify the device password on the command line, thus eliminating the timeout in the original version</li>
 <li>Communication relies on the OS buffers to detect arrival of device replies, which makes this code significantly faster

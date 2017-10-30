@@ -46,7 +46,7 @@ namespace Tsbloader_adv
         public enum en_bootloader_operations
         {
             EEP_ERASE, EEP_WRITE, EEP_VERIFY, EEP_READ, FW_ERASE, FW_WRITE, FW_VERIFY, FW_READ,
-            TIMEOUT_CHANGE, PASSWORD_CHANGE, EMERGENCY_ERASE, SEEDEROS_BRIDGEENABLE, DISPLAY_DEVICE_INFO
+            TIMEOUT_CHANGE, PASSWORD_CHANGE, EMERGENCY_ERASE, SEEDEROS_BRIDGEENABLE, SEEDEROS_BRIDGEDISABLE, DISPLAY_DEVICE_INFO
         }
 
         public List<en_bootloader_operations> bootloader_operations;
@@ -314,11 +314,15 @@ namespace Tsbloader_adv
                          case "-seederos":
                              if (seederos_found_)  { throw_error_duplicate_param(split[0]); return false; }
 
-                             if (split[1].ToLower().Equals("bren"))
+                             if (split[1].ToLower().Equals("bron") || split[1].ToLower().Equals("bren")) /* we'll keep 'bren' for legacy purposes but hanging for 'bron' for future */
                              {
                                  bootloader_operations.Add(en_bootloader_operations.SEEDEROS_BRIDGEENABLE);
                              }
-                             else
+                             else if (split[1].ToLower().Equals("broff"))
+                             {
+                                bootloader_operations.Add(en_bootloader_operations.SEEDEROS_BRIDGEDISABLE);
+                             }
+                            else
                              {
                                  throw_error(string.Format("Invalid option '{0}' specified for '{1}'", split[1], split[0]));
                                  return false;
@@ -398,6 +402,7 @@ namespace Tsbloader_adv
             Console.WriteLine("-pwd=      [specify only if acessing password protected devices");
             Console.WriteLine("           specify the password (if only one device) or a list of");
             Console.WriteLine("           comma-separated passwords if acessing several devices.]");
+            Console.WriteLine("-I         Displays device and bootloader information.");
             Console.WriteLine("-fop=      [flash operation(s) to perform. Multiple options can be specified.");
             Console.WriteLine("           e=erase, w=write, v=verify, r=read.");
             Console.WriteLine("           Operations are performed in the order they are written]");
@@ -420,10 +425,8 @@ namespace Tsbloader_adv
             Console.WriteLine("-i         Display bootloader and device information");
             Console.WriteLine("-?, -h     Displays help screen (this screen)");
             Console.WriteLine("Commands specific to Seed Robotics products:");
-            Console.WriteLine("           -seederos=bren [enables bridge mode on an EROS main board]");
-            Console.WriteLine("");
-            Console.WriteLine("To only display Device and Bootloader information, run the program");
-            Console.WriteLine("without any -fop, -eop, xop or -XXX options.");
+            Console.WriteLine("           -seederos=bron  [enables  bridge mode on an EROS main board]");
+            Console.WriteLine("           -seederos=broff [disabled bridge mode on an EROS main board]");
             Console.WriteLine("");
             Console.WriteLine("*** Apply RESET or POWER-UP on target device right before TSB session!  ***");
             Console.WriteLine(" Some boards may autoreset the devices on Serial connection (Arduino style) ");

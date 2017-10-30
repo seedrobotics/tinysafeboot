@@ -37,6 +37,8 @@ namespace Tsbloader_adv
              */
             System.AppDomain.CurrentDomain.UnhandledException += UnhandledExceptionTrapper;
 
+            bool errors_encountered = false;
+
             CommandLineParser cmd_parser = new CommandLineParser();
 
             if (cmd_parser.parse_command_line(args) == false)
@@ -107,6 +109,8 @@ namespace Tsbloader_adv
                     }
 
                     serial_port.Close();
+
+                    return 0;
                 }
                 catch (Exception ex)
                 {
@@ -117,53 +121,98 @@ namespace Tsbloader_adv
                     return RETURN_SEEDEROS_COMMAND_FAILED;
                 }
 
-                cmd_parser.bootloader_operations.Remove(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEENABLE);
+            }
+
+            /* check if we have the Seed Eros bridge mode disable;
+            * if we have it, it runs last
+            */
+            if (cmd_parser.bootloader_operations.Contains(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEDISABLE))
+            {
+                System.IO.Ports.SerialPort serial_port = new System.IO.Ports.SerialPort();
+
+                /* to exit bridge mode, we open and close the port at 1200 bps */
+                serial_port.BaudRate = 1200;
+                serial_port.PortName = cmd_parser.port_name;
+                serial_port.Encoding = Encoding.ASCII;
+
+                try
+                {
+                    Console.WriteLine();
+                    Console.Write("> Seed Robotics Eros: Sending Host request to disable bridge mode...");
+
+
+                    serial_port.Open();
+                    serial_port.DtrEnable = true; /* on Mono / .Net we apparently need to explicitly set DTR */
+
+                    System.Threading.Thread.Sleep(800); /* wait a couple of seconds */
+
+                    serial_port.Close();
+                    System.Threading.Thread.Sleep(1000); /* wait a couple of seconds */
+
+                    Console.WriteLine(" Done.\n");
+                    Console.WriteLine("  ( If your firmware supports host request to exit bridge mode, the unit's LEDs should be back to white/three colours.");
+                    Console.WriteLine("    If the LED colour hasn't changed, you need to manually power cycle your unit (including disconnecting the USB cable) to resume regular operation.)");
+
+                    return 0;
+
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("ERROR");
+                    Console.WriteLine(ex.Message);
+                    Console.WriteLine();
+                    Console.WriteLine("> Post process command (SeedEros) failed.");
+                    return RETURN_SEEDEROS_COMMAND_FAILED;
+                }
 
             }
 
             /* only advance to TSB if we have more commands lined up and requested at the command line */
-            if (cmd_parser.bootloader_operations.Count == 0)
+            if (cmd_parser.bootloader_operations.Count == 0 ||
+               (cmd_parser.bootloader_operations.Count == 1 && cmd_parser.bootloader_operations.Contains(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEDISABLE)) )
             {
                 Console.WriteLine();
-                Console.WriteLine("> No bootloader actions specified. Ending session.");
+                Console.WriteLine("> No bootloader actions specified. Ending session");
                 return 0;
             }
+            
 
-            bool errors_encountered = false;
-
-            foreach(string pwd in cmd_parser.bootloader_passwords) {
-                if (pwd.Length > 0) {
+            foreach (string pwd in cmd_parser.bootloader_passwords)
+            {
+                if (pwd.Length > 0)
+                {
                     Console.WriteLine();
                     Console.WriteLine("> Activating bootloader for device with password: {0}", pwd);
                     Console.WriteLine();
-                } else {
+                }
+                else {
                     Console.WriteLine();
                     Console.WriteLine("> Activating bootloader (no device password specified)");
                     Console.WriteLine();
                 }
 
                 /* build a new instance for every new device; this ensures variables and
-                 * control structures come from a clean slate, which makes sense, since we're
-                 * starting a whole new session
-                 */
+                    * control structures come from a clean slate, which makes sense, since we're
+                    * starting a whole new session
+                    */
                 TSBInterfacing tsb = new TSBInterfacing();
 
-                if (tsb.ActivateBootloader(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd ))
+                if (tsb.ActivateBootloader(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd))
                 {
                     /* Bootloader is active. Print all bootloader information */
                     PrintDeviceInfo(tsb);
 
                     if (cmd_parser.patch_daisychain_bug)
-                    {                        
+                    {
                         if (tsb.session_data_.daisychain_patch_in_lastpage == false)
                         {
                             /* forcing a LastPageWrite will write the data with the necessary
-                             * patches in place to cope with this bug */
+                                * patches in place to cope with this bug */
 
                             Console.WriteLine();
                             Console.WriteLine("> Patching for daisy chain operation", pwd);
-                            Console.WriteLine();  
-                          
+                            Console.WriteLine();
+
                             tsb.LastPage_Write();
                         }
                         else
@@ -175,16 +224,16 @@ namespace Tsbloader_adv
                     }
 
                     /*  check if the user asked to tag the file names.
-                     *  This MUST be done here for the cases where we use multiple
-                     *  passwords; in that case, we have sessins starting at different times
-                     *  (initiated here) and also different passwords
-                     */
+                        *  This MUST be done here for the cases where we use multiple
+                        *  passwords; in that case, we have sessins starting at different times
+                        *  (initiated here) and also different passwords
+                        */
                     string tag = string.Format("_{0:yyMMdd}_{0:HHmmss}", DateTime.Now);
                     if (pwd.Length > 0) tag += string.Format("_{0}", pwd);
 
                     string eep_filename = cmd_parser.eeprom_file_name;
                     string flash_filename = cmd_parser.flash_file_name;
-                    
+
                     if (cmd_parser.tag_eepromfilename_withdatetimepwd && !string.IsNullOrEmpty(cmd_parser.eeprom_file_name))
                     {
                         eep_filename = AddTagToFilename(cmd_parser.eeprom_file_name, tag);
@@ -199,7 +248,8 @@ namespace Tsbloader_adv
                     /* loop through the various operations requested */
                     foreach (CommandLineParser.en_bootloader_operations bootloader_op in cmd_parser.bootloader_operations)
                     {
-                        switch(bootloader_op) {
+                        switch (bootloader_op)
+                        {
                             case CommandLineParser.en_bootloader_operations.DISPLAY_DEVICE_INFO:
                                 /* do nothing; when we activated TSB it already displayed the device info */
                                 break;
@@ -320,11 +370,11 @@ namespace Tsbloader_adv
                                     string new_timeout = Console.ReadLine();
 
                                     if (string.IsNullOrEmpty(new_timeout))
-                                    {   
+                                    {
                                         Console.WriteLine("Invalid timeout specified. Timeout must be number between 8 and 255.");
                                     }
                                     else
-                                    {                                        
+                                    {
                                         if (!int.TryParse(new_timeout, out new_timeout_setting))
                                         {
                                             Console.WriteLine("Invalid timeout specified. Timeout must be number between 8 and 255.");
@@ -341,7 +391,7 @@ namespace Tsbloader_adv
                                 }
 
                                 /* no need to confirm this one; save immediately */
-                                tsb.session_data_.timeout = (byte) new_timeout_setting;
+                                tsb.session_data_.timeout = (byte)new_timeout_setting;
                                 if (!tsb.LastPage_Write())
                                 {
                                     Console.WriteLine();
@@ -373,6 +423,8 @@ namespace Tsbloader_adv
                     errors_encountered = true;
                 }
             }
+
+
 
             if (errors_encountered)
             {

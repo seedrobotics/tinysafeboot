@@ -570,8 +570,20 @@ namespace Tsbloader_adv
                     }                    
                 }
             } while (curr_addr < nr_bytes_infile);
+            /* Cosmetic improvement: round the address displayed to the next page.
+                This is because, if you do a sequence of Write->Verifiy, write will stop counting
+                at an address multiple of pagezise whereas verify above, stopped at the actual end of the file.
+                Bump the address up to the next multiple fo pagesize so that the Write and Verify addresses are the same
+                Otherwise it might trick the user into thinking the file was not completely verified.
+                The later message "x bytes verified" will display the actual number of bytes verified */
+            int last_addr = nr_bytes_infile;
+            if (last_addr % session_data_.pagesize != 0)
+            {
+                last_addr = (last_addr / session_data_.pagesize + 1) * session_data_.pagesize;
+            }
+            Console.SetCursorPosition(con_col, con_row);
+            Console.WriteLine("0x{0:X} ({1}%)", last_addr, 100);
 
-            Console.WriteLine();
             Console.WriteLine("EEProm Verification sucessful. Verified all {0} bytes in file {1}", nr_bytes_infile, eep_filename);
 
             return return_to_tsbmainparser();
@@ -822,8 +834,20 @@ namespace Tsbloader_adv
                     }
                 }
             } while (curr_addr < nr_bytes_infile);
+            /* Cosmetic improvement: round the address displayed to the next page.
+               This is because, if you do a sequence of Write->Verifiy, write will stop counting
+               at an address multiple of pagezise whereas verify above, stopped at the actual end of the file.
+               Bump the address up to the next multiple fo pagesize so that the Write and Verify addresses are the same
+               Otherwise it might trick the user into thinking the file was not completely verified.
+               The later message "x bytes verified" will display the actual number of bytes verified */
+            int last_addr = nr_bytes_infile;            
+            if (last_addr % session_data_.pagesize != 0)
+            {
+                last_addr = (last_addr / session_data_.pagesize + 1) * session_data_.pagesize;
+            }
+            Console.SetCursorPosition(con_col, con_row);
+            Console.WriteLine("0x{0:X} ({1}%)", last_addr, 100);
 
-            Console.WriteLine();
             Console.WriteLine("Flash Verification sucessful. Verified all {0} bytes in file {1}", nr_bytes_infile, flash_filename);
 
             return return_to_tsbmainparser();

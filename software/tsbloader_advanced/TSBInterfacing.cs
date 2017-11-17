@@ -136,7 +136,7 @@ namespace Tsbloader_adv
              */
             if (serial_port_.BytesToRead > 0)
             {
-                Console.WriteLine("< " + serial_port_.ReadExisting().ToString());
+                Console.WriteLine("< " + serial_port_.ReadExisting().ToString().Replace("\n","\n< "));
                 Console.WriteLine();
             }
 
@@ -719,7 +719,7 @@ namespace Tsbloader_adv
             else if (nr_bytes_infile > session_data_.appflash)
             {
                 Console.WriteLine("ERROR");
-                Console.WriteLine("File is larger than Flash size. (file size={0}, flash size={1})", nr_bytes_infile, session_data_.flash_size);
+                Console.WriteLine("File is larger than Flash size. (file size={0}, flash size={1})", nr_bytes_infile, session_data_.appflash);
                 return false;
             }
 
@@ -908,6 +908,165 @@ namespace Tsbloader_adv
 
             Console.WriteLine("Done");
             Console.WriteLine("Flash Erase complete.");
+            return true;
+        }
+
+        public bool EmergencyErase(string port_name, int baud_bps, int pre_wait_ms, int reply_timeout_ms)
+        {
+            /* The process of issuing an emergency erase involves sending the initialization sequence @@@
+             * and then send a \0.
+             * The bootloader responds with REQUEST and we send a CONFIRM
+             */
+
+            Console.Write("Performing Emergency Erase... ");
+
+            /* Because in an Emergency Erase can't Activate the Bootloader, we must go through the
+               process of opening the port and sending the activating chars manually */
+            if (bootloader_active_)
+            {
+                Console.WriteLine("ERROR");
+                Console.WriteLine("Attempting to Initiate an Emergency Erase but another Bootloader session is already active.{0}End the previous sessio before starting a new one. (in code, use function DeactivateBootloader())", Environment.NewLine);
+                return false;
+            }
+
+            if (serial_port_.IsOpen)
+            {
+                serial_port_.Close();
+            }
+
+            serial_port_.BaudRate = baud_bps;
+            serial_port_.PortName = port_name;
+            serial_port_.Encoding = Encoding.ASCII;
+
+            try
+            {
+                serial_port_.Open();
+
+                /* Apparently on .Net/Mono we need to manually set the DTR enable flag,
+                 * which is commonly asserted whenever a device connects to a terminal.
+                 * The internal Reset of the Seed Eros boards is dependent on this behaviour
+                 * of DTR so, for the sake of honouring the "typical" behaviour
+                 * we will assert it on connect and de-assert it on disconnect
+                 */
+                serial_port_.DtrEnable = true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("ERROR");
+                Console.WriteLine(string.Format("Error opening Serial port '{0}':", serial_port_.PortName));
+                Console.WriteLine(ex.Message);
+                return false;
+            }
+
+            Thread.Sleep(pre_wait_ms);
+
+            /* print and discard any data that may have appeared in the meanime. This data is not relevant for the bootloader
+             * activation process. 
+             */
+            if (serial_port_.BytesToRead > 0)
+            {
+                Console.WriteLine("< " + serial_port_.ReadExisting().ToString().Replace("\n", "\n< "));
+                Console.WriteLine();
+            }
+
+
+            /* Send bootloader activation chars
+             *  (no password)
+             */
+            serial_port_.Write("@@@");
+
+            /* wait for reply or timeout */
+            wait_for_reply(reply_timeout_ms, bootloader_activation_messagesize);
+
+            if (serial_port_.BytesToRead != 0) /* if no reply */
+            {
+                Console.WriteLine("HALT");
+                Console.WriteLine();
+                Console.WriteLine("It seems the Bootloader is still accessible without password.");
+                Console.WriteLine("No Emergency Erase will be performed. If you wish to erase flash or eeprom");
+                Console.WriteLine("memories on a device without password, use '-fop=e' and '-eop=e' instead.");
+                return false;
+            }
+
+
+            /* now the sequence is the following:
+                   - Send 0x0
+                   - Receive REQ char
+                   - Send CONF
+                   - Receive REQ char second time
+                   - Send CONF a third time.
+             */
+            for (byte b=0; b <=1; b++) { 
+                if (b==0)
+                {
+                    /* Send a 0x0 to indicate Emergency erase */
+                    serial_port_.Write(((char)'\0').ToString());
+                } else
+                {
+                    serial_port_.Write(((char)CONFIRM_CHAR).ToString());
+                }
+
+                wait_for_reply(command_reply_timeout_ms, 1);
+                if (serial_port_.BytesToRead != 1)
+                {
+                    Console.WriteLine("ERROR");
+
+                    if (b == 0)
+                    {
+                        Console.WriteLine("No reply from bootloader. (Is the device connected? Did you power cycle the device?)");
+                    }
+                    else {
+                        Console.WriteLine("No Request signal from bootloader after sending CONFIRMATION of Erase.");
+                    }
+                    return false;
+                }
+                else
+                {
+                    byte conf = (byte)serial_port_.ReadByte(); /* read the REQUEST byte g */
+                    if (conf != REQUEST_CHAR)
+                    {
+                        Console.WriteLine("ERROR");
+                        Console.WriteLine("Protocol out of Sync: did not receive the expected REQUEST char in the {1} cycle. Instead got '{0}'", ((char)conf).ToString(), b+1);
+                        return false;
+                    }
+                }
+            }
+
+            serial_port_.Write(((char)CONFIRM_CHAR).ToString()); /* send the final confirmation */
+
+            /* do some animation to show some progress */
+            int con_col = Console.CursorLeft, con_row = Console.CursorTop;
+
+            string progress_signals = "|/-\\|/-\\|/-\\";
+
+            for (byte b=0; b<=10; b++)
+            {
+                Console.SetCursorPosition(con_col, con_row);
+                Console.Write("{0}", progress_signals.Substring(b, 1));
+                wait_for_reply(command_reply_timeout_ms, 1); /* wait for the CONFIRMATION char; to inform the Emergency Erase is done
+                                                                wait longer than usual as mutiple memories must be erased */
+            }
+            Console.SetCursorPosition(con_col, con_row);
+
+            if (serial_port_.BytesToRead != 1)
+            {
+                Console.WriteLine("ERROR");
+                Console.WriteLine("The bootloader has not sent confirmation indicating Emergency Erase is complete.");
+                return false;
+            }
+            else
+            {
+                byte conf = (byte)serial_port_.ReadByte(); /* read the REQUEST byte g */
+                if (conf != CONFIRM_CHAR)
+                {
+                    Console.WriteLine("ERROR");
+                    Console.WriteLine("Protocol out of Sync: Did not received the Confirmation character indicating Emergency Erase is complete. Instead got '{0}'", ((char)conf).ToString());
+                    return false;
+                }
+            }
+
+            Console.WriteLine("Done");
+            Console.WriteLine("Emergency Erase complete.");
             return true;
         }
 

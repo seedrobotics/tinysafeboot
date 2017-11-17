@@ -41,7 +41,7 @@ namespace Tsbloader_adv
         */
 
          private const int default_prewait_ms = 300;
-         private const int default_replytimeout_ms = 2000;
+         private const int default_replytimeout_ms = 3000;
 
         public enum en_bootloader_operations
         {
@@ -337,7 +337,13 @@ namespace Tsbloader_adv
                  }
              }
 
-             if (xxx_found_ && bootloader_operations.Count() > 1) 
+            if (!port_found_)
+            {
+                throw_error(string.Format("Missing command line parameter '-port'{0}The serial port name must be specified for all operations.", Environment.NewLine));
+                return false;
+            }
+
+            if (xxx_found_ && bootloader_operations.Count() > 1) 
              {
                  /* xxx was specified but other operations were specified too.
                   * This is an incorrect behaviour. XXX must be used alone
@@ -402,7 +408,7 @@ namespace Tsbloader_adv
             Console.WriteLine("-pwd=      [specify only if acessing password protected devices");
             Console.WriteLine("           specify the password (if only one device) or a list of");
             Console.WriteLine("           comma-separated passwords if acessing several devices.]");
-            Console.WriteLine("-I         Displays device and bootloader information.");
+            Console.WriteLine("-i         Displays device and bootloader information.");
             Console.WriteLine("-fop=      [flash operation(s) to perform. Multiple options can be specified.");
             Console.WriteLine("           e=erase, w=write, v=verify, r=read.");
             Console.WriteLine("           Operations are performed in the order they are written]");
@@ -420,9 +426,8 @@ namespace Tsbloader_adv
             Console.WriteLine("-XXX       [performs an emergency erase. If XXX is specified, no");
             Console.WriteLine("           -fop, -eop, -xop options are allowed]");
             Console.WriteLine("-patchdaisychain [patches the UserData page in order to cope with");
-            Console.WriteLine("                  the issue when operating in one-wire daisy chain");
-            Console.WriteLine("                  (TSB versions versions before 2017)]");
-            Console.WriteLine("-i         Display bootloader and device information");
+            Console.WriteLine("                  a known issue operating in one-wire daisy chain");
+            Console.WriteLine("                  (TSB bootloader versions earlier than 2017)]");
             Console.WriteLine("-?, -h     Displays help screen (this screen)");
             Console.WriteLine("Commands specific to Seed Robotics products:");
             Console.WriteLine("           -seederos=bron  [enables  bridge mode on an EROS main board]");
@@ -443,8 +448,9 @@ namespace Tsbloader_adv
             Console.WriteLine("an error and will not perform the next operations.");
             Console.WriteLine("");
             Console.WriteLine("");
-            Console.WriteLine("This program was developed by Seed Robotics Ltd (UK) and expands on the");
-            Console.WriteLine("excellent work of Julien Thomas (http://jtxp.org/).");
+            Console.WriteLine("This program was developed by Seed Robotics Ltd (http://seedrobotics.com) and");
+            Console.WriteLine("expands on the excellent work of Julien Thomas (http://jtxp.org/).");
+            Console.WriteLine("Source code is available from https://github.com/seedrobotics/tinysafeboot");
             Console.WriteLine("This program is Licensed under the GNU GPL V3 version.");
             Console.WriteLine("See <http://www.gnu.org/licenses/>");
          }

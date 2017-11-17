@@ -46,17 +46,11 @@ namespace Tsbloader_adv
                 return RETURN_INVALID_CMDLINE;
             }
 
-            /* cycle through the selected options */
-            if (cmd_parser.bootloader_passwords.Count() == 0)
-            {
-                /* add a bogus entry with an empty password. Assuming user intends to start the session
-                 * with no password. */
-                cmd_parser.bootloader_passwords.Add("");
-            }
-
-            /* check if we have the Seed Eros bridge mode enable;
-             * if we have it, it must be the first to run
+            /********************************
+             * SEED EROS Bdrige mode enable/disable requests
              */
+
+            /* SEED EROS Bridge Enable */
             if (cmd_parser.bootloader_operations.Contains(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEENABLE))
             {
                 System.IO.Ports.SerialPort serial_port = new System.IO.Ports.SerialPort();
@@ -123,9 +117,7 @@ namespace Tsbloader_adv
 
             }
 
-            /* check if we have the Seed Eros bridge mode disable;
-            * if we have it, it runs last
-            */
+            /* SEED EROS Bridge Disable */
             if (cmd_parser.bootloader_operations.Contains(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEDISABLE))
             {
                 System.IO.Ports.SerialPort serial_port = new System.IO.Ports.SerialPort();
@@ -140,7 +132,6 @@ namespace Tsbloader_adv
                     Console.WriteLine();
                     Console.Write("> Seed Robotics Eros: Sending Host request to disable bridge mode...");
 
-
                     serial_port.Open();
                     serial_port.DtrEnable = true; /* on Mono / .Net we apparently need to explicitly set DTR */
 
@@ -154,7 +145,6 @@ namespace Tsbloader_adv
                     Console.WriteLine("    If the LED colour hasn't changed, you need to manually power cycle your unit (including disconnecting the USB cable) to resume regular operation.)");
 
                     return 0;
-
                 }
                 catch (Exception ex)
                 {
@@ -165,6 +155,64 @@ namespace Tsbloader_adv
                     return RETURN_SEEDEROS_COMMAND_FAILED;
                 }
 
+            }
+
+            /* Emergency Erase Request
+             * Emergency Erase restoresbootloader acces sin case of lost password, by wiping
+             * the full FLASH and EEPROM memory areas
+             */
+            if (cmd_parser.bootloader_operations.Contains( CommandLineParser.en_bootloader_operations.EMERGENCY_ERASE)) {
+                
+                Console.WriteLine();
+                Console.WriteLine("WARNING: Emergency Erase deletes all Application Flash");
+                Console.WriteLine("and EEPROM data, as well as Timeout and Password.");
+                Console.WriteLine("No Firmware or EEPROM data will be left on the device after");
+                Console.WriteLine("this operation.");
+                Console.WriteLine("This provides for a clean TSB with default values.");
+                Console.WriteLine();
+                Console.WriteLine("IMPORTANT! An Emergency Erase DOES NOT target an individual");
+                Console.WriteLine("device; if the device is connected on a BUS (Daisy chain),");
+                Console.WriteLine("ALL the devices will perform the Emergency Erase.");
+                Console.WriteLine();
+                Console.WriteLine("This function should ONLY be used by experienced users.");
+                Console.WriteLine();
+                Console.Write("Do you fully understand the information above? (Y/n) ");
+                if (!get_YesNo_reply())
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("Operation cancelled. Nothing was done.");
+                    return 0;
+                }
+                Console.Write("Do you wish to continue? (Y/n) ");
+                if (!get_YesNo_reply())
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("Operation cancelled. Nothing was done.");
+                    return 0;
+                }
+
+                Console.WriteLine();
+
+                TSBInterfacing tsb = new TSBInterfacing();
+                if (!tsb.EmergencyErase(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms))
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("> Error while performing Emergency Erase operation.");
+                    return RETURN_ERRORS_ENCOUNTERED;
+                } else
+                {
+                    return 0;
+                }
+            }
+
+
+            /********** Main cycle for multi-device bootloader operations **************
+            /* Cycle through the passwords specified for the bootloader */
+            if (cmd_parser.bootloader_passwords.Count() == 0)
+            {
+                /* add a bogus entry with an empty password. Assuming user intends to start the session
+                 * with no password. */
+                cmd_parser.bootloader_passwords.Add("");
             }
 
             /* only advance to TSB if we have more commands lined up and requested at the command line */
@@ -190,6 +238,7 @@ namespace Tsbloader_adv
                     Console.WriteLine("> Activating bootloader (no device password specified)");
                     Console.WriteLine();
                 }
+
 
                 /* build a new instance for every new device; this ensures variables and
                     * control structures come from a clean slate, which makes sense, since we're
@@ -400,13 +449,6 @@ namespace Tsbloader_adv
                                 }
                                 break;
 
-                            case CommandLineParser.en_bootloader_operations.EMERGENCY_ERASE:
-                                Console.WriteLine();
-                                Console.WriteLine("> Emergency Erase functionality is not yet implemented.");
-                                Console.WriteLine("  If you need to perform an Emergency Erase, use the original TSB");
-                                Console.WriteLine("  Loader (written in FreeBasic)");
-                                break;
-
                             default:
                                 Console.WriteLine("ERROR: Unknown Bootloader operation in function main()");
                                 return RETURN_UNKOWN_OPTION_IN_CASE;
@@ -443,21 +485,16 @@ namespace Tsbloader_adv
         static void PrintDeviceInfo(TSBInterfacing tsb)
         {
             Console.WriteLine();
-            Console.WriteLine("TSB Bootloader and Device Information:");
-
-            Console.WriteLine("Version  : {0}", tsb.session_data_.buildver);
-            Console.WriteLine("Status   : {0:X}", tsb.session_data_.status);
-            Console.WriteLine("Signature: {0}", tsb.session_data_.device_signature);
-            Console.WriteLine("Name     : {0}", tsb.session_data_.device_name);
-            Console.WriteLine("Flash    : {0}", tsb.session_data_.flash_size);
-            Console.WriteLine("Appflash : {0}", tsb.session_data_.appflash);
-            Console.WriteLine("Pagesize : {0}", tsb.session_data_.pagesize);
-            Console.WriteLine("EEProm   : {0}", tsb.session_data_.eeprom_size);
-            Console.WriteLine("AppJump  : {0:X4}", tsb.session_data_.appjump_address);
-            Console.WriteLine("JumpMode : {0}", (tsb.session_data_.jump_mode == TSBInterfacing.en_appjump_mode.ABSOLUTE_JUMP ? "Absolute" : "Relative"));
-            Console.WriteLine("Timeout  : {0}", tsb.session_data_.timeout);
-            Console.WriteLine("Password : {0}", tsb.session_data_.password);
-            Console.WriteLine("Patch for operation in Daisy Chain {0} applied to User Data/Last Page.", tsb.session_data_.daisychain_patch_in_lastpage ? "is" : "is NOT");
+            Console.WriteLine("==================================================================");
+            Console.WriteLine("|   Bootloader information   |     Device Information            |");
+            Console.WriteLine("==================================================================");
+            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Version  : {0}", tsb.session_data_.buildver), string.Format("Name     : {0}", tsb.session_data_.device_name));
+            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Password : {0}", tsb.session_data_.password),  string.Format("Signature: {0}", tsb.session_data_.device_signature));
+            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Timeout  : {0}", tsb.session_data_.timeout), string.Format("Flash    : {0}b", tsb.session_data_.flash_size));
+            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("AppJump  : {0:X4}", tsb.session_data_.appjump_address), string.Format("Appflash : {0}b", tsb.session_data_.appflash));
+            Console.WriteLine(" {0,-28}  {1, -35}", "Patch for Daisy Chain", string.Format("EEProm   : {0}b", tsb.session_data_.eeprom_size));
+            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("operation: {0}", tsb.session_data_.daisychain_patch_in_lastpage ? "Applied" : "Not Applied"), string.Format("Pagesize : {0}b", tsb.session_data_.pagesize));
+            Console.WriteLine("==================================================================");
         }
 
         static string AddTagToFilename(string filename, string tag)
@@ -505,6 +542,23 @@ namespace Tsbloader_adv
                 millis = DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond;
             } while (serial_port.BytesToRead < 1 && millis < end_millis);
 
+        }
+
+        static bool get_YesNo_reply()
+        {
+            string reply;
+            do
+            {
+                reply = Console.ReadLine();
+            } while (string.IsNullOrEmpty(reply));
+
+            if (reply.ToUpper() == "Y")
+            {
+                return true;
+            } else
+            {
+                return false;
+            }
         }
 
         static void UnhandledExceptionTrapper(object sender, UnhandledExceptionEventArgs e)

@@ -1,6 +1,8 @@
 This folder contains compiled versions of the TSBAdvanced Loader tool.
 
-These tools are compiled with open source Mono .Net compiler meaning the binaries are cross platform for Windows, Linux and MacOS, provided Mono is installed on your system (in case iti is Linux os MacOS)
+TSBLoader is a PC software to interact with the bootloader on the slave device to flash, manage eeprom, etc.
+
+This tool is compiled with open source Mono .Net compiler meaning the binaries are cross platform for Windows, Linux and MacOS, provided Mono is installed on your system (in case iti is Linux os MacOS)
 
 Refer to Mono project page (http://www.mono-project.com/) for information on installing Mono.
 MONO is REQUIRED if you wish to run the binaries under Linux and MacOS. There is no need to recompile any file if you have Mono installed.

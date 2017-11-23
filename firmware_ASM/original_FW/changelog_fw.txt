@@ -4,13 +4,6 @@ CHANGELOG TINYSAFEBOOT - FIRMWARE
 tsb_tinymega.asm
 ------------------------------------------------------------------------
 
-20161027
-Autobauding revisited and slightly improved with respect to 
-higher baudrates and/or odd clock frequency.
-Had to shorten confirmation procedure for an Emergency Erase, mainly to 
-make the BL still fit into 512 bytes segment.
-
-
 20150826
 Fixed oversize-bug with some ATmegas. Treatment of other than 
 Watchdog-Resets had to be removed.

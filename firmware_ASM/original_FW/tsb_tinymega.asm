@@ -78,9 +78,9 @@
 ; BUILD INFO
 ;-----------------------------------------------------------------------
 ; YY = Year - MM = Month - DD = Day
-.set    YY      =       16
-.set    MM      =       10
-.set    DD      =       27
+.set    YY      =       15
+.set    MM      =       8
+.set    DD      =       26
 ;
 .set BUILDSTATE = $F0   ; version management option
 ;
@@ -121,7 +121,7 @@
 ;~ .equ    RXBIT   = 0
 ;~ .equ    TXPORT  = PORTD
 ;~ .equ    TXDDR   = DDRD
-;~ .equ    TXBIT   = 1
+;~ .equ    TXBIT   = 0
 
 ;-----------------------------------------------------------------------
 ; *** Changes below this line are on your own risk! ***
@@ -541,7 +541,7 @@ WRX0To:
         sbiw xl, 1                      ; use X for Timeout counter
         brcc WRX0To                     ; if timed out with 0 level
         rjmp APPJUMP                    ; goto APPJUMP in LASTPAGE
-;~ ;~
+
 WRXSTo:                                 ; else
         rcall ZtoLASTPAGE               ; set Z to start'o'LASTPAGE
         adiw zl, 2                      ; skip first 2 bytes (APPJUMP)
@@ -555,8 +555,6 @@ WRX1To:
         sbiw xl, 1                      ; use X for down counter
         brcc WRX1To                     ; to Timeout
         rjmp APPJUMP                    ; goto APPJUMP in LASTPAGE
-
-
 
 ;-----------------------------------------------------------------------
 ; BAUDRATE CALIBRATION CYCLE
@@ -573,10 +571,7 @@ WRX1To:
 Activate:
         clr xl                          ; clear temporary
         clr xh                          ; baudrate counter
-        ldi tmp1, 5                     ; number of expected bit-changes
-actw0:
-        sbis RXPIN, RXBIT               ; discard first 0-state
-        rjmp actw0
+        ldi tmp1, 6                     ; number of expected bit-changes
 actw1:
         sbic RXPIN, RXBIT               ; idle 1-states (stopbits, ones)
         rjmp actw1                      ; with NO Timeout
@@ -584,8 +579,6 @@ actw2:
         adiw xl, 1                      ; precision measuring loop
         sbis RXPIN, RXBIT               ; count clock cycles in 0-state
         rjmp actw2
-
-        sbiw xl, 10
         dec tmp1
         brne actw1
 actwx:
@@ -617,8 +610,8 @@ chpw2:  rcall Receivebyte               ; else receive next character
 chpwee:
         rcall RequestConfirm            ; request confirm
         brts chpa                       ; not confirmed, leave
-        ;~ rcall RequestConfirm            ; request 2nd confirm
-        ;~ brts chpa                       ; can't be mistake now
+        rcall RequestConfirm            ; request 2nd confirm
+        brts chpa                       ; can't be mistake now
         rcall EmergencyErase            ; go, emergency erase!
         rjmp  Mainloop
 chpa:
@@ -667,7 +660,7 @@ ChangeS0:
 ;-----------------------------------------------------------------------
 ; uses: bcnt
 
-CheckSettings:
+ControlSettings:
         rcall ZtoLASTPAGE               ; point to LASTPAGE
 ;       rjmp SendPageFromFlash          ; send LASTPAGE over RS232
 
@@ -765,7 +758,7 @@ FlashX:
 
 CheckCommands:
         cpi tmp1, 'c'                   ; read LASTPAGE
-        breq CheckSettings
+        breq ControlSettings
         cpi tmp1, 'C'                   ; write LASTPAGE
         breq ChangeSettings
         cpi tmp1, 'f'                   ; read Appflash
@@ -986,6 +979,7 @@ WrPa3:
 
         ldi bcnt, 16
         sbiw yl, 16                     ; back to start of real-page
+
 WrPV1:
         lpm tmp1, z+                    ; load flash byte
         ld tmp2,  y+                    ; load buffer byte
@@ -994,8 +988,8 @@ WrPV1:
         brts WrPV2                      ; T=1 skips verify consequences
         rcall SendConfirm               ; in case of verify error
         rcall EraseAppFlash             ; erase appflash and freeze
-WrPVf:
-        rjmp WrPVf                      ; for bootloader's sake
+WrPVf:  rjmp WrPVf                      ; for bootloader's sake
+
 WrPV2:
         dec bcnt                        ; count down page bytecounter
         brne WrPV1                      ; loop until all bytes checked
@@ -1087,13 +1081,14 @@ Recb4:
         brne Recb3                      ; loop until 8 bits collected
         rjmp Waitbitcell                ; wait for center of stopbit
 
+
 ;-----------------------------------------------------------------------
 ; RS232 SEND CONFIRM CHARACTER
 ;-----------------------------------------------------------------------
 
 SendConfirm:
         ldi tmp1, CONFIRM
-        ;rjmp Transmitbyte              ; transmit confirm character
+        ;rjmp Transmitbyte
 
 ;-----------------------------------------------------------------------
 ; RS232 TRANSMIT BYTE
@@ -1136,7 +1131,7 @@ Trx0:
 Waitbitcell:
         movw xl, bclkl                  ; load bitcell clock timer
 wbc1:
-        sbiw xl, 17                     ; same number of clocks
+        sbiw xl, 24                     ; same number of clocks
         nop                             ; as in calibration loop
         brcc wbc1
 wbcx:   ret
@@ -1290,19 +1285,14 @@ APPJUMP:
 Activate:
         clr xl                          ; clear temporary
         clr xh                          ; baudrate counter
-        ldi tmp1, 5                     ; number of expected bit-changes
-actw0:
-        sbis RXPIN, RXBIT               ; discard first 0-state
-        rjmp actw0
+        ldi tmp1, 6                     ; number of expected bit-changes
 actw1:
         sbic RXPIN, RXBIT               ; idle 1-states (stopbits, ones)
         rjmp actw1
 actw2:
         adiw xl, 1                      ; precision measuring loop
         sbis RXPIN, RXBIT               ; count clock cycles
-        rjmp actw2                      ; while RX is active (0)
-
-        sbiw xl, 10
+        rjmp actw2                      ; while RX is 0-state
         dec tmp1
         brne actw1
 actwx:
@@ -1313,15 +1303,12 @@ actwx:
 ;-----------------------------------------------------------------------
 
 CheckPassword:
-chpw0:
-        ser tmp4                        ; tmp4 = 255 enables comparison
-chpw1:
-        lpm tmp3, z+                    ; load pw character from Z
+chpw0:  ser tmp4                        ; tmp4 = 255 enables comparison
+chpw1:  lpm tmp3, z+                    ; load pw character from Z
         and tmp3, tmp4                  ; tmp3 = 0 disables comparison
         cpi tmp3, 255                   ; byte value 255 indicates
         breq chpwx                      ; end of password -> success
-chpw2:
-        rcall Receivebyte               ; else receive next character
+chpw2:  rcall Receivebyte               ; else receive next character
         cpi tmp1, 0                     ; rxbyte = 0 will branch
         breq chpwee                     ; to confirm emergency erase
         cp  tmp1, tmp3                  ; compare password with rxbyte
@@ -1331,12 +1318,12 @@ chpw2:
 chpwee:
         rcall RequestConfirm            ; request confirmation
         brts chpa                       ; not confirmed, leave
-        ;~ rcall RequestConfirm            ; request 2nd confirmation
-        ;~ brts chpa                       ; can't be mistake now
+        rcall RequestConfirm            ; request 2nd confirmation
+        brts chpa                       ; can't be mistake now
         rcall EmergencyErase            ; go, emergency erase!
-        rjmp  Mainloop                  ; return to main loop
+        rjmp  Mainloop
 chpa:
-        rjmp APPJUMP                    ; else start application
+        rjmp APPJUMP                    ; start application
 chpwx:
 ;       rjmp SendDeviceInfo             ; go on to SendDeviceInfo
 
@@ -1348,7 +1335,7 @@ SendDeviceInfo:
         ldi zl, low (DEVICEINFO*2)      ; load address of deviceinfo
         ldi zh, high(DEVICEINFO*2)      ; low and highbyte
         ldi bcnt, INFOLEN*2
-        rcall SendFromFlash             ; send info, then go mainloop
+        rcall SendFromFlash
 
 ;-----------------------------------------------------------------------
 ; MAIN LOOP TO RECEIVE AND EXECUTE COMMANDS
@@ -1379,7 +1366,7 @@ ChangeS0:
 ; SEND USER DATA FROM LASTPAGE
 ;-----------------------------------------------------------------------
 
-CheckSettings:
+ControlSettings:
         rcall ZtoLASTPAGE               ; point to LASTPAGE
 ;       rcall SendPageFromFlash
 
@@ -1418,7 +1405,7 @@ RAFx:
 ;-----------------------------------------------------------------------
 ; WRITE APPLICATION FLASH
 ;-----------------------------------------------------------------------
-; Write Appflash pagewise, don't modify first page on ATmegas
+; Write Appflash pagewise, don't modify anything for ATmegas
 
 WriteAppFlash:
         rcall EraseAppFlash             ; Erase whole app flash
@@ -1472,7 +1459,7 @@ WrPa3:
 
 CheckCommands:
         cpi tmp1, 'c'                   ; read LASTPAGE
-        breq CheckSettings
+        breq ControlSettings
         cpi tmp1, 'C'                   ; write LASTPAGE
         breq ChangeSettings
         cpi tmp1, 'f'                   ; read Appflash
@@ -1563,6 +1550,7 @@ GNPx:
 RequestConfirm:
         ldi tmp1, REQUEST               ; send request character
         rcall Transmitbyte              ; prompt to confirm (or not)
+
 RwaitConfirm:
         rcall ReceiveByte               ; get host's reply
         clt                             ; set T=0 for confirmation
@@ -1609,7 +1597,7 @@ EraseFlashPage:
         out SPMCSR, tmp1                ; in SPMCSR and erase current
         spm                             ; page by SPM (MCU halted)
 
-; Waiting for SPM to finish is *obligatory* on ATmegas!
+; Waiting for SPM to be finished is *obligatory* on ATmegas!
 SPMwait:
         in tmp1, SPMCSR
         sbrc tmp1, 0                    ; wait previous SPMEN
@@ -1699,7 +1687,7 @@ Trx0:
 Waitbitcell:
         movw xl, bclkl                  ; load bitcell clock timer
 wbc1:
-        sbiw xl, 17                     ; same number of clocks
+        sbiw xl, 24                     ; same number of clocks
         nop                             ; as in calibration loop
         brcc wbc1
 wbcx:   ret

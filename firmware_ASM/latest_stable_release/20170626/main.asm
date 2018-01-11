@@ -68,6 +68,7 @@
 ;.include "m644def.inc"
 ;.include "tn167def.inc"
 ;.include "tn25def.inc"
+.include "m88PAdef.inc"
 ;
 ; [...]
 ;
@@ -78,9 +79,9 @@
 ; BUILD INFO
 ;-----------------------------------------------------------------------
 ; YY = Year - MM = Month - DD = Day
-.set    YY      =       17
-.set    MM      =       6
-.set    DD      =       26
+.set    YY      =       18
+.set    MM      =       1
+.set    DD      =       11
 ;
 .set BUILDSTATE = $F1   ; version management option
 ;
@@ -98,13 +99,13 @@
 ;
 ; Important Note: B0/B1 are defaults for database templates
 ;
-.equ    RXPORT  = PORTB
-.equ    RXPIN   = PINB
-.equ    RXDDR   = DDRB
-.equ    RXBIT   = 0
+.equ    RXPORT  = PORTD
+.equ    RXPIN   = PIND
+.equ    RXDDR   = DDRD
+.equ    RXBIT   = 2
 .equ    TXPORT  = PORTB
 .equ    TXDDR   = DDRB
-.equ    TXBIT   = 1
+.equ    TXBIT   = 2
 ;
 ; Testing
 ;~ .equ    RXPORT  = PORTA
@@ -1085,7 +1086,17 @@ Recb3:
 Recb4:
         dec tmp2                        ; count down bitcounter
         brne Recb3                      ; loop until 8 bits collected
-        rjmp Waitbitcell                ; wait for center of stopbit
+
+		; bugfix for starting TX too early
+		; original code, rjmp to Waitbitcell which essentially returned
+		; when we were at the middle of the stop bit;
+		; if we are responding with a TX of a character, we'll be too
+		; early because we haven't waited for the rest of the stop bit.
+		; so we need to advance Half a bit to the end of the last data bit
+		; AND THEN wait a full bit cell
+		rcall Waithalfbitcell           ; advance to the edge of the data bit
+		
+        rjmp Waitbitcell                ; wait for the end of stopbit
 
 
 ;-----------------------------------------------------------------------
@@ -1118,7 +1129,8 @@ Trxbit:                                 ; transmit byte loop
         rcall Trx0                      ; sent logical 0 bitcell
         lsr tmp1                        ; shift out that bit
         dec tmp2                        ; count down
-        brne Trxbit                     ; loop until all bits sent
+        brne Trxbit                     ; loop until all bits sent								
+										
 Trx1:
         sbi TXDDR, TXBIT                ; if RX=TX (One-Wire), result is
         cbi RXDDR, RXBIT                ; pullup to Vcc for "1" (high-Z)
@@ -1255,12 +1267,17 @@ WRX0To:
         rjmp APPJUMP                    ; goto APPJUMP in LASTPAGE
 WRXSTo:                                 ; else
         rcall ZtoLASTPAGE               ; set Z to start'o'LASTPAGE
-        adiw zl, 2                      ; skip first 2 bytes
+        adiw zl, 2                      ; skip first 2 bytes (the first 2 are the appstart address)
         lpm xh, z+                      ; load TIMEOUT byte
         ldi xl, 128
 
 WRX1To:
         dec tmp1                        ; inner counter to delay
+										; tmp1 is initialized from when we set RAMEND
+										; and then it seems it keeps overflowing
+										; but the whole thing should happen in nanoseconds
+										; it counts a full overflow cycle before every
+										; decrement of the the xl counter
         brne WRX1To                     ; for debouncing/denoising
         sbis RXPIN, RXBIT               ; if serial startbit occurs
         rjmp Activate                   ; go Activate
@@ -1278,11 +1295,13 @@ WRX1To:
 APPJUMP:
         rcall SPMwait                   ; make sure everything's done
 
+
 .if FLASHEND >= ($1fff)
         jmp  $0000                      ; absolute jump
 .else
-        rjmp $0000                      ; relative jump
+		rjmp $0000                      ; relative jump
 .endif
+
 
 ;-----------------------------------------------------------------------
 ; BAUDRATE CALIBRATION CYCLE
@@ -1292,6 +1311,14 @@ Activate:
         clr xl                          ; clear temporary
         clr xh                          ; baudrate counter
         ldi tmp1, 6                     ; number of expected bit-changes
+										; because activation sequence is @@@
+										; @ = 64 = b01000000
+										; so for every byte you have 1x0 (start bit) + 6x0 (for the byte itself)
+										; and you will see the change from 0-1 on the 7th bit and the stop bit
+										; so 2 times per byte; therefore, since we have 3 bytes we get 6 changes
+										; also note we only decrement tmp1 on transitions from 0-1
+										; we will also count the time for 24x0s in total: 1x start bit + 7 data bits at 0 = 8bits
+										; 8bits X 3chars (3x@) = 24x0s
 actw1:
         sbic RXPIN, RXBIT               ; idle 1-states (stopbits, ones)
         rjmp actw1
@@ -1326,8 +1353,8 @@ chpwee:
 		; gotten a wrong password; if we got a wrong password
 		; then we should stay in loop and not escape to Emergency
 		; Erase
-		cpi tmp4, 0						; if tmp4=0 we are set to loop forever
-		breq chpw1
+		cpi tmp4, 0						; if tmp4=0 we had decided before to loop forever (wrong password)
+		breq chpw1						; so go back to the cycle to pull chars and no emergency erase
 		rcall RequestConfirm            ; request confirmation
         brts chpa                       ; not confirmed, leave
         rcall RequestConfirm            ; request 2nd confirmation
@@ -1641,7 +1668,10 @@ ZtoLASTPAGE:
 ;-----------------------------------------------------------------------
 
 ReceiveByte:
-        sbi RXPORT, RXBIT               ; again set pullup for RX
+        ;sbi RXPORT, RXBIT              ; again set pullup for RX -- seems un necessary
+										; this is set up at the beginning and the TX routine
+										; always returns to INPUT PULL UP specifically for cases
+										; where the pin is shared in One wire mode.
 Recb1:
         sbic RXPIN, RXBIT               ; wait for startbit (0)
         rjmp Recb1                      ; loop while stop state (1)
@@ -1656,7 +1686,24 @@ Recb3:
 Recb4:
         dec tmp2                        ; count down bitcounter
         brne Recb3                      ; loop until 8 bits collected
-        rjmp Waitbitcell                ; wait into center of stopbit
+
+; bugfix for starting TX too early
+; original code, did an rjmp to Waitbitcell only which essentially returned
+; when we were at the middle of the stop bit (because we previously advanced
+; to the middle of the bit)
+; if next we'll be sending a character, the Start bit we'll be too
+; early because we haven't waited for the rest of the stop bit.
+; so we need to advance Half a bit to the end of the last data bit
+; AND THEN wait a full bit cell to complete the stop bit
+
+; This bugfix MAY not be necessary; TX waits a full bit cycle before starting
+; transmission; maybe we were off timing with the stop bit due to the problem
+; that 0s and 1s did not have the same transmission time and thus could 
+; cause the overall byte length to vary.
+
+;rcall Waithalfbitcell           ; advance to the edge of the data bit
+
+        rjmp Waitbitcell                ; move to wait for stop bit
 
 ;-----------------------------------------------------------------------
 ; RS232 SEND CONFIRM CHARACTER
@@ -1672,6 +1719,15 @@ SendConfirm:
 
 TransmitByte:
         rcall Waitbitcell               ; ensure safe RX-TX transition
+										; this seems to compensate if we come from RX, because RX
+										; leaves at the middle of the stop bit; adding a bitcell
+										; would put the stop bit in correct timing but it DOES NOT
+										; in the logic analyser we see the start bit too early; 
+										; so we have added extra timing at the end of the RX.
+										
+;;;;;;;;;;;;;; change Pedro
+		sbi TXDDR, TXBIT                ; Set TX OUTPUT for active drive (no rely on pull up)										
+										
         rcall Trx0                      ; transmit 0 = startbit
         ldi tmp2, 8                     ; set bitcounter
 Trxbit:                                 ; transmit byte loop
@@ -1682,15 +1738,27 @@ Trxbit:                                 ; transmit byte loop
         lsr tmp1                        ; shift out that bit
         dec tmp2                        ; count down
         brne Trxbit                     ; loop until all bits sent
+
+;;;;;;; Rewrite:		
+		; send stop bit and tidy up the port state
+		rcall Trx1						; actively send oout stop bit
+        cbi TXDDR, TXBIT                ; change to input
+										; because we just sent a 1, TXPORT is set to 1 and
+										; therefore it is INPUT_HIGH; this is the desired behaviour
+										; if we are on One Wire (RX is pulling up) and it's harmless
+										; if we are on Full Duplex
+		ret								; change this to a fallthrough if we need code space 
+
+
 Trx1:
-        sbi TXDDR, TXBIT                ; if RX=TX (One-Wire), result is
-        cbi RXDDR, RXBIT                ; pullup to Vcc for "1" (high-Z)
-        sbi TXPORT, TXBIT               ; else portbit actively driven
-        rjmp Waitbitcell
+        sbi TXPORT, TXBIT               ; portbit actively driven HIGH
+        rjmp Waitbitcell				; 
+
 Trx0:
-        sbi TXDDR, TXBIT                ; set TX driver for output
         cbi TXPORT, TXBIT               ; set portbit to active "0"
-;       rjmp Waitbitcell                ; continue with Waitbitcell
+        ;rjmp Waitbitcell               ; fallthrough bc we already spent extra time/instructions above determining
+										; it was not a 1
+		
 
 ;-----------------------------------------------------------------------
 ; RS232 PRECISION TIMING
@@ -1699,9 +1767,9 @@ Trx0:
 Waitbitcell:
         movw xl, bclkl                  ; load bitcell clock timer
 wbc1:
-        sbiw xl, 24                     ; same number of clocks
-        nop                             ; as in calibration loop
-        brcc wbc1
+        sbiw xl, 24                     ; the original callibration cycle counted the time for 24x0s
+        nop                             ; so we subtract in pieces of 24 at a time, and this way get the time of 1bit.
+        brcc wbc1                       ; the nop is likely to fine tune the timing as the callibration cycle had quite a lot more instructions
 wbcx:   ret
 
 Waithalfbitcell:

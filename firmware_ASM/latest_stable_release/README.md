@@ -7,7 +7,7 @@ and breaks compatibility with the PC tool; we chose to fork off the 20150826 ver
 <p>
 <b>Compiling</b>
 </p><p>
-To Compile this code you need ATMEL Studio or gavrasm. Both are free.</p>
+To Compile this code you need ATMEL Studio or, in theory, gavrasm. Both are free; however gavrasm has been throwing compile errors in these latest versions so we strongly recommened ATMEL Studio.</p>
 <ul><li>ATMEL Studio is quite a large download but it's fairly user friendly.<br/>The files in this folder are for an ATMEL Studio 7 solution.</li>
 <li>gavrasm is much lighter and seems straightforward as well (http://www.avr-asm-tutorial.net/gavrasm/index_en.html)<br/>If you'll be using gavrasm, you probably only need the <i>ASM</i> file.</li>
 </ul>

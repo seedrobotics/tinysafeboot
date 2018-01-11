@@ -1,0 +1,1798 @@
+gavrasm Gerd's AVR assembler version 3.7 (C)2017 by DG4FAC
+----------------------------------------------------------
+Source file: main.asm
+Hex file:    main.hex
+Eeprom file: main.eep
+Compiled:    11.01.2018, 05:03:27
+Pass:        2
+     1: ;***********************************************************************
+     2: ;***********************************************************************
+     3: ;***********************************************************************
+     4: ; TinySafeBoot - The Universal Bootloader for AVR ATtinys and ATmegas
+     5: ;***********************************************************************
+     6: ;***********************************************************************
+     7: ;***********************************************************************
+     8: ;
+     9: ;-----------------------------------------------------------------------
+    10: ; Written in 2011-2015 by Julien Thomas
+    11: ;
+    12: ; This program is free software; you can redistribute it and/or
+    13: ; modify it under the terms of the GNU General Public License
+    14: ; as published by the Free Software Foundation; either version 3
+    15: ; of the License, or (at your option) any later version.
+    16: ; This program is distributed in the hope that it will be useful,
+    17: ; but WITHOUT ANY WARRANTY; without even the implied warranty
+    18: ; of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+    19: ; See the GNU General Public License for more details.
+    20: ; You should have received a copy of the GNU General Public License
+    21: ; along with this program; if not, see:
+    22: ; http://www.gnu.org/licenses/
+    23: ;-----------------------------------------------------------------------
+    24: ;
+    25: ;
+    26: ;
+    27: ;***********************************************************************
+    28: ; OVERVIEW
+    29: ;***********************************************************************
+    30: ;
+    31: ; TSB assembly source is organized in 4 segments (approx. line numbers)
+    32: ;
+    33: ; ~   50 ... Global definitions
+    34: ; ~  240 ... TSB Installer for ATtinys
+    35: ; ~  470 ... TSB for ATtinys
+    36: ; ~ 1180 ... TSB for ATmegas
+    37: ;
+    38: ;***********************************************************************
+    39: ; ADJUSTMENTS FOR INDIVIDUAL ASSEMBLY
+    40: ;***********************************************************************
+    41: ;
+    42: ; This Sourcecode is directly compatible to: AVRASM2, GAVRASM
+    43: ;
+    44: .nolist
+    77: ;
+    78: ;-----------------------------------------------------------------------
+    79: ; BUILD INFO
+    80: ;-----------------------------------------------------------------------
+    81: ; YY = Year - MM = Month - DD = Day
+    82: .set    YY      =       18
+    83: .set    MM      =       1
+    84: .set    DD      =       11
+    85: ;
+    86: .set BUILDSTATE = $F1   ; version management option
+    87: ;
+    88: ;-----------------------------------------------------------------------
+    89: ; TSB / TSB-INSTALLER SWITCH
+    90: ;-----------------------------------------------------------------------
+    91: ; 0 = Regular assembly to target address
+    92: ; 1 = TSB-Installer (ATtinys only - parameter ignored with ATmegas)
+    93: ;
+    94: .set    TSBINSTALLER = 1
+    95: ;
+    96: ;-----------------------------------------------------------------------
+    97: ; PORTS
+    98: ;-----------------------------------------------------------------------
+    99: ;
+   100: ; Important Note: B0/B1 are defaults for database templates
+   101: ;
+   102: .equ    RXPORT  = PORTD
+   103: .equ    RXPIN   = PIND
+   104: .equ    RXDDR   = DDRD
+   105: .equ    RXBIT   = 2
+   106: .equ    TXPORT  = PORTB
+   107: .equ    TXDDR   = DDRB
+   108: .equ    TXBIT   = 2
+   109: ;
+   110: ; Testing
+   111: ;~ .equ    RXPORT  = PORTA
+   112: ;~ .equ    RXPIN   = PINA
+   113: ;~ .equ    RXDDR   = DDRA
+   114: ;~ .equ    RXBIT   = 0
+   115: ;~ .equ    TXPORT  = PORTA
+   116: ;~ .equ    TXDDR   = DDRA
+   117: ;~ .equ    TXBIT   = 1
+   118: 
+   119: ;~ .equ    RXPORT  = PORTD
+   120: ;~ .equ    RXPIN   = PIND
+   121: ;~ .equ    RXDDR   = DDRD
+   122: ;~ .equ    RXBIT   = 0
+   123: ;~ .equ    TXPORT  = PORTD
+   124: ;~ .equ    TXDDR   = DDRD
+   125: ;~ .equ    TXBIT   = 0
+   126: 
+   127: ;-----------------------------------------------------------------------
+   128: ; *** Changes below this line are on your own risk! ***
+   129: ;-----------------------------------------------------------------------
+   130: ;
+   131: ;
+   132: ;
+   133: ;***********************************************************************
+   134: ; AUTO-ADJUST FOR DIFFERENT ASSEMBLY OPTIONS
+   135: ;***********************************************************************
+   136: ;
+   137: ; Autodetect ATtiny / ATmega and set TINYMEGA switch accordingly
+   138: 
+   139: .ifdef RWW_START_ADDR
+   140:         .if RWW_START_ADDR == RWW_STOP_ADDR
+   141:         .equ TINYMEGA = 0
+   142:         .message "DETECTED ATTINY DEFINITIONS"
+   143:         .else
+   144:         .equ TINYMEGA = 1
+   145:         .message "DETECTED ATMEGA DEFINITIONS"
+ -> Message: DETECTED ATMEGA DEFINITIONS
+   File: main.asm, Line: 145
+   146:         .endif
+   147: .else
+   148:         .equ TINYMEGA = 0
+   149:         .message "DETECTED ATTINY DEFINITIONS"
+   150: .endif
+   151: 
+   152: .if FLASHEND > ($7fff)
+   153:         .error "SORRY! DEVICES OVER 64 KB NOT SUPPORTED YET."
+   154:         .exit
+   155: .endif
+   156: 
+   157: ;-----------------------------------------------------------------------
+   158: ; Workarounds for devices with renamed or missing definitions
+   159: ;-----------------------------------------------------------------------
+   160: ;
+   161: .ifndef SPMCSR                  ; SPMEN / PGERS / ...
+   162:         .equ SPMCSR = SPMCR
+   163: .endif
+   164: 
+   165: .ifndef MCUSR                   ; PORF / EXTRF / BORF / WDRF
+   166:         .equ MCUSR = MCUCSR
+   167: .endif
+   168: 
+   169: ; Detect Attiny441/841 to amend missing pagesize and apply 4-page mode
+   170: 
+   171: .set FOURPAGES = 0
+   172: 
+   173: .if ((SIGNATURE_000 == $1E) && (SIGNATURE_002 == $15) && (SIGNATURE_001 == $92))
+   174:                 .equ PAGESIZE = 32
+   175:                 .set FOURPAGES = 1
+   176:                 .message "ATTINY441: 4-PAGE-ERASE MODE"
+   177: .endif
+   178: 
+   179: .if ((SIGNATURE_000 == $1E) && (SIGNATURE_002 == $15) && (SIGNATURE_001 == $93))
+   180:                 .equ PAGESIZE = 32
+   181:                 .set FOURPAGES = 1
+   182:                 .message "ATTINY841: 4-PAGE-ERASE MODE"
+   183: .endif
+   184: 
+   185: ;-----------------------------------------------------------------------
+   186: ; Universal Constants and Registers
+   187: ;-----------------------------------------------------------------------
+   188: 
+   189: .equ    REQUEST         = '?'           ; request / answer / go on
+   190: .equ    CONFIRM         = '!'           ; confirm / attention
+   191: 
+   192: ; Current bootloader date coded into 16-bit number
+   193: .equ    BUILDDATE   = YY * 512 + MM * 32 + DD
+   194: 
+   195: ; Other
+   196: .equ    INFOLEN         = 8              ; *Words* of Device Info
+   197: .equ    BUFFER          = SRAM_START
+   198: 
+   199: ; Registers (in use by TSB-Firmware and TSB-Installer for ATtinys)
+   200: .def    avecl   = r4                    ; application vector temp low
+   201: .def    avech   = r5                    ; application vector temp high
+   202: .def    bclkl   = r6                    ; baudclock low byte
+   203: .def    bclkh   = r7                    ; baudclock high byte
+   204: .def    tmp1    = r16                   ; these are
+   205: .def    tmp2    = r17                   ; universal
+   206: .def    tmp3    = r18                   ; temporary
+   207: .def    tmp4    = r19                   ; registers
+   208: .def    bcnt    = r20                   ; page bytecounter
+   209: 
+   210: ;-----------------------------------------------------------------------
+   211: ; TSB for ATtinys
+   212: ;-----------------------------------------------------------------------
+   213: ; TSB for ATtinys may be build directly to its target address   or
+   214: ; as an 'Installer' that can install new TSB from existing bootloader.
+   215: ;-----------------------------------------------------------------------
+   216: 
+   217: .if TINYMEGA == 0       ; .endif  by the end of TSB for ATtinys
+   218: 
+   219: ; TSB for ATtinys at target location
+   220: .equ    TSBLEN          = ((280 / PAGESIZE)+1) * PAGESIZE
+   221: .equ    BOOTSTART       = (FLASHEND+1) - PAGESIZE - TSBLEN
+   222: .equ    LASTPAGE        = BOOTSTART + TSBLEN
+   223: .equ    DEVICEINFO      = BOOTSTART + TSBLEN - INFOLEN
+   224: 
+   225: ; TSB-Installer (ATtinys only)
+   226: .equ    TBOOTSTART      = $00C0
+   227: .equ    TLASTPAGE       = TBOOTSTART + TSBLEN
+   228: .equ    TDEVICEINFO     = TLASTPAGE - INFOLEN
+   229: 
+   230: ;-----------------------------------------------------------------------
+   231: 
+   232: .if TSBINSTALLER == 1   ; .endif  by the end of TSB-Installer section
+   233: 
+   234: .message "ASSEMBLY OF TSB-INSTALLER FOR ATTINYS"
+   235: 
+   236: .set    CLASTPAGE = TLASTPAGE           ; for alignment check later on
+   237: 
+   238: .if FOURPAGES == 0
+   239:         .set RPAGESIZE = PAGESIZE
+   240: .else
+   241:         .set RPAGESIZE = PAGESIZE / 4   ; exemption for ATtiny 441/841
+   242: .endif
+   243: 
+   244: ;***********************************************************************
+   245: ; TSB-INSTALLER FOR ATTINYS
+   246: ;***********************************************************************
+   247: ; The 'TSB-Installer' may be uploaded like ordinary Firmware via ISP,
+   248: ; but also by any bootloader mechanism that is residing on the ATtiny.
+   249: ; First run, the Installer will check its own integrity, then remove
+   250: ; the modified reset vector and erase old bootloader from upper memory.
+   251: ; Then it will transfer the brought-along new TSB-Firmware to its target
+   252: ; address space and finally remove itself from memory.
+   253: ; NOTE: This update mechanism is applicable only to ATtinys.
+   254: ;
+   255: ; The process evolves in 5 levels:
+   256: ; 1. check if the program was uploaded true and completely.
+   257: ; 2. remove modified reset-jump and reinstate itself as reset target.
+   258: ; 3. erase previous bootloader code.
+   259: ; 4. write+verify new tsb to upper flash, retry on errors.
+   260: ; 5. clean-up (self-erase) and handover to new bootloader.
+   261: ;
+   262: ;-----------------------------------------------------------------------
+   263: ; Extra registers in use by TSB-Installer
+   264: ;-----------------------------------------------------------------------
+   265: 
+   266: .def    pcnt    = r21                   ; page counter
+   267: .def    checkl  = r22                   ; checksum counters
+   268: .def    checkh  = r23
+   269: .def    tslo    = r8                    ; temp current source address
+   270: .def    tshi    = r9
+   271: .def    ttlo    = r10                   ; temp current target address
+   272: .def    tthi    = r11
+   273: .def    bflo    = r12                   ; start address of buffer
+   274: .def    bfhi    = r13
+   275: 
+   276: ;-----------------------------------------------------------------------
+   277: ; 1st PAGE: RESET-JUMP / JUMP TO LEVEL 1 (INTEGRITY CHECK)
+   278: ;-----------------------------------------------------------------------
+   279: 
+   280: .org $0000
+   281: 
+   282: .if FLASHEND >= ($1fff)
+   283:         .message "Using JMP for Reset Vector"
+   284:         jmp  TL1CHECK
+   285: .else
+   286:         .message "Using RJMP for Reset Vector"
+   287:         rjmp TL1CHECK
+   288: .endif
+   289: 
+   290: .org RPAGESIZE-2
+   291: 
+   292: TL1CHECK:
+   293: 
+   294:         rjmp L1CHECK                    ; LEVEL 1 start with selftest
+   295:         ;rjmp TTRESET                   ; debugging: skip selftest
+   296: 
+   297: .db $00, $00                            ; placeholder for a checksum
+   298: 
+   299: ;-----------------------------------------------------------------------
+   300: ; 2nd PAGE: START OF TSB-INSTALLER CRITICAL CODE
+   301: ;-----------------------------------------------------------------------
+   302: 
+   303: .org RPAGESIZE
+   304: 
+   305: TTRESET:
+   306:         cli
+   307:         ldi tmp1, low (RAMEND)          ; write ramend low to SPL
+   308:         out SPL, tmp1
+   309:         .ifdef SPH
+   310:         ldi tmp1, high(RAMEND)          ; write ramend high to SPH
+   311:         out SPH, tmp1                   ; when SRAM > 256 bytes
+   312:         .endif
+   313:         rjmp L2EraseFirstPage
+   314: 
+   315: ;-----------------------------------------------------------------------
+   316: ; LEVEL 1 - CHECK INTEGRITY OF TSB-INSTALLER
+   317: ;-----------------------------------------------------------------------
+   318: ; First of all we have to check integrity of the TSB-Installer at whole.
+   319: ; Therefore a Checksum is calculated over all pages carrying relevant
+   320: ; machine code of TSB-Installer and attached TSB-Firmware.
+   321: ; If this value (16 bit) is equal to the checksum that is found in the
+   322: ; first page (precalculated by TSB-SW in the course of making customized
+   323: ; TSB-Installer), we're assured, that the Installer has been uploaded
+   324: ; correctly and in whole and it is safe to start next level.
+   325: ; Yet with checksum error, the Installer will never leave this level
+   326: ; and the old Bootloader will stay in force.
+   327: 
+   328: L1CHECK:
+   329:         cli
+   330:         ldi zh, high((RPAGESIZE-1)*2)   ; checksum stored by TSB-SW
+   331:         ldi zl, low ((RPAGESIZE-1)*2)   ; in last two bytes of 1st page
+   332:         lpm checkh, z+                  ; load checksum high byte
+   333:         lpm checkl, z+                  ; load checksum low byte
+   334:         ldi pcnt,(TLASTPAGE/RPAGESIZE)-1 ; # of pages to check
+   335: L1C0:   ldi bcnt, low(RPAGESIZE*2)       ; # of bytes to check per page
+   336: L1C1:   lpm tmp1, z+                    ; load byte of TSB-FW
+   337:         sub checkl, tmp1                ; subtract byte value
+   338:         sbci checkh, 0                  ; from checksum word
+   339:         dec bcnt                        ; until full page checked
+   340:         brne L1C1                       ; loop on
+   341:         dec pcnt
+   342:         brne L1C0                       ; until all pages checked
+   343: L1C2:
+   344:         cpi checkl, 0                   ; if checksum was correct,
+   345:         brne L1C2                       ; both bytes will be zero
+   346:         cpi checkh, 0                   ; else we cannot continue
+   347:         brne L1C2                       ; and loop in here
+   348:         rjmp TTRESET
+   349: 
+   350: ;-----------------------------------------------------------------------
+   351: ; LEVEL 2 - REMOVE RESET-VECTOR TO OLD BOOTLOADER
+   352: ;-----------------------------------------------------------------------
+   353: ; After integrity of the TSB-Installer has been proven in Level 1,
+   354: ; we can simply erase the whole 1st page, since it only contained the
+   355: ; reset-jump to the old bootloader, the rjmp to the checksum routine
+   356: ; and the checksum, which are no longer needed.
+   357: ; Relevant machine code for the remaining tasks of TSB-Installer
+   358: ; begins in 2nd page and will be started at the latest with some
+   359: ; further reset or coldstart.
+   360: 
+   361: L2EraseFirstPage:
+   362:         clr zl                          ; set Z to $0000
+   363:         clr zh                          ; start of 1st page
+   364:         ldi tmp1, 0b00000011            ; enable PGERS + SPMEN
+   365:         out SPMCSR, tmp1                ; in SPMCSR and go -
+   366:         spm                             ; erase that 1st page!
+   367: 
+   368: ;-----------------------------------------------------------------------
+   369: ; LEVEL 3 - ERASE PREVIOUS BOOTLOADER
+   370: ;-----------------------------------------------------------------------
+   371: ; Erase flash memory that may contain old bootloader's code
+   372: ; down from LASTPAGE/FLASHEND to TLASTPAGE.
+   373: 
+   374:         ldi zl, low (LASTPAGE*2)        ; reset Z to LASTPAGE's start
+   375:         ldi zh, high(LASTPAGE*2)
+   376:         ldi pcnt, low ((LASTPAGE - TLASTPAGE) / RPAGESIZE) + 1
+   377: L3EPB0:
+   378:         ldi tmp1, 0b00000011            ; enable PGERS + SPMEN
+   379:         out SPMCSR, tmp1                ; in SPMCSR and erase current
+   380:         spm                             ; page by SPM (MCU halted)
+   381:         subi zl, low (RPAGESIZE*2)      ; Z = Z - PAGESIZE * 2
+   382:         sbci zh, high(RPAGESIZE*2)
+   383:         dec pcnt
+   384:         brne L3EPB0
+   385: 
+   386: ;-----------------------------------------------------------------------
+   387: ; LEVEL 4 - WRITE/VERIFY NEW BOOTLOADER
+   388: ;-----------------------------------------------------------------------
+   389: ; Copy new bootloader to its final location in upper flash memory.
+   390: ; If verifying should fail, it will try again with every next reset.
+   391: ; Pages copied top-to-bottom to avoid overlap in small attinys < 1k.
+   392: 
+   393: L4WriteVerify:
+   394: 
+   395:         ldi tmp1, low  (TLASTPAGE*2)    ; starting address source
+   396:         ldi tmp2, high (TLASTPAGE*2)
+   397:         movw tslo, tmp1
+   398:         ldi tmp1, low  (LASTPAGE*2)     ; starting address target
+   399:         ldi tmp2, high (LASTPAGE*2)
+   400:         movw ttlo, tmp1
+   401:         ldi pcnt, (((LASTPAGE-BOOTSTART)/RPAGESIZE)+1)   ; # of pages
+   402: 
+   403: ; load source page contents into buffer
+   404: L4WV0:
+   405:         ldi yl, low (BUFFER)            ; set y to start address
+   406:         ldi yh, high(BUFFER)            ; of buffer (in SRAM)
+   407:         movw bflo, yl                   ; buffer start to bfhi/bflo
+   408:         ldi bcnt, low (RPAGESIZE*2)
+   409:         movw zl, tslo                   ; load Z with source address
+   410: L4WV1:
+   411:         lpm tmp1, z+                    ; load flash byte
+   412:         st y+, tmp1                     ; and store in buffer
+   413:         dec bcnt                        ; until full page buffered
+   414:         brne L4WV1                      ; loop on
+   415:         subi zl, low (RPAGESIZE*4)      ; decrease by two pages
+   416:         sbci zh, high(RPAGESIZE*4)      ; to continue one page below
+   417:         movw tslo, zl                   ; save current Z
+   418: 
+   419: ; transfer buffer to flash write buffer and write to target page
+   420:         movw yl, bflo                   ; restore y to buffer start
+   421:         ldi bcnt, low(RPAGESIZE*2)
+   422:         movw zl, ttlo                   ; load Z with target address
+   423: L4WV2:
+   424:         ld r0, y+                       ; fill R0/R1 with word
+   425:         ld r1, y+                       ; from buffer position Y
+   426:         ldi tmp1, 0b00000001            ; set only SPMEN
+   427:         out SPMCSR, tmp1                ; to activate page buffering
+   428:         spm                             ; store word in page buffer
+   429:         adiw zl, 2                      ; Z = Z + 2
+   430:         subi bcnt, 2                    ; bcnt=bcnt-2
+   431:         brne L4WV2
+   432:         subi zl, low (RPAGESIZE*2)      ; restore Z to start of current
+   433:         sbci zh, high(RPAGESIZE*2)      ; page for write and verify
+   434:         ldi tmp1, 0b00000101            ; enable PRWRT + SPMEN
+   435:         out SPMCSR, tmp1                ; in SPMCSR and
+   436:         spm                             ; write flash page from buffer
+   437: L4WV3:
+   438:         in tmp1, SPMCSR                 ; wait for flash write finished
+   439:         sbrc tmp1, 0                    ; go on if SPMEN cleared
+   440:         rjmp L4WV3                      ; otherwise wait along
+   441: 
+   442: ; verify page just written, but stop everything in case of an error
+   443: 
+   444: L4WV4:  movw yl, bflo                   ; restore y to buffer start
+   445:         ldi bcnt, low (RPAGESIZE*2)
+   446: L4WV5:
+   447:         lpm tmp1, z+                    ; load byte from flash
+   448:         ld tmp2, y+                     ; load buffer byte
+   449:         cp tmp1, tmp2                   ; compare them
+   450:         breq L4WV7                      ; and loop on if equal
+   451: 
+   452: L4WV6:  rjmp L4WV6                      ; else - hangup!
+   453: 
+   454: L4WV7:  dec bcnt                        ; count down page bytecounter
+   455:         brne L4WV5                      ; loop until all bytes checked
+   456:         subi zl, low (RPAGESIZE*4)      ; decrease by two pages
+   457:         sbci zh, high(RPAGESIZE*4)      ; to continue one page below
+   458:         movw ttlo, zl                   ; save z to target pointer
+   459: L4WV8:
+   460:         dec pcnt                        ; loop on with write and verify
+   461:         brne L4WV0                      ; until all pages transferred
+   462: L4WVx:
+   463: 
+   464: ;-----------------------------------------------------------------------
+   465: ; LEVEL 5 - HANDOVER TO NEW TSB AND CLEAN-UP FLASH
+   466: ;-----------------------------------------------------------------------
+   467: ; Now jump to the absolute address of 'EraseAppFlash' in new TSB.
+   468: ; This will remove all installer code from memory and complete
+   469: ; the installation by leaving new TSB with cleaned up AppFlash.
+   470: 
+   471: L5EraseInstaller:
+   472:         ldi tmp1, low (EraseAppFlash+(BOOTSTART-TBOOTSTART))
+   473:         ldi tmp2, high(EraseAppFlash+(BOOTSTART-TBOOTSTART))
+   474:         push tmp1                       ; push lowbyte on stack
+   475:         push tmp2                       ; push highbyte on stack
+   476:         ret                             ; = improvised absolute jump!
+   477: 
+   478: ;***********************************************************************
+   479: ; END OF TSB-INSTALLER
+   480: ;***********************************************************************
+   481: 
+   482: .endif          ; from the if-part launching TSB-INSTALLER
+   483: 
+   484: 
+   485: ;***********************************************************************
+   486: ;***********************************************************************
+   487: ;***********************************************************************
+   488: ; START OF REGULAR TSB CODE FOR ATTINYS
+   489: ;***********************************************************************
+   490: ;***********************************************************************
+   491: ;***********************************************************************
+   492: ; NOTE: The programming of TSB is largely relocatable which allows it
+   493: ; being assembled inline with the Installer-routines.
+   494: ; Only the absolute addresses of LASTPAGE, BOOTSTART and DEVICEINFO
+   495: ; must be hard coded with respect to the bootloader's target location.
+   496: 
+   497: ; Make the following code a TSB-Installer-piggyback
+   498: .if TSBINSTALLER == 1
+   499: .org TBOOTSTART
+   500: .endif
+   501: 
+   502: ; Make the following code a TSB for target address
+   503: .if TSBINSTALLER == 0
+   504: .org BOOTSTART
+   505: .message "ASSEMBLY OF TSB FOR ATTINYS TO REGULAR ADDRESS RANGE"
+   506: .set CLASTPAGE = LASTPAGE
+   507: .endif
+   508: 
+   509: RESET:
+   510:         cli
+   511: 
+   512:         in tmp4, MCUSR                  ; check reset condition
+   513:         sbrc tmp4, WDRF                 ; in case of a Watchdog reset
+   514:         rjmp APPJUMP                    ; immediately leave TSB
+   515: 
+   516:         ldi tmp1, low (RAMEND)          ; write ramend low
+   517:         out SPL, tmp1                   ; into SPL (stackpointer low)
+   518:         .ifdef SPH
+   519:         ldi tmp1, high(RAMEND)          ; write ramend high for ATtinys
+   520:         out SPH, tmp1                   ; with SRAM > 256 bytes
+   521:         .message "PROVIDING FOR STACK BIGGER THAN 256 BYTES"
+   522:         .endif
+   523: 
+   524: ;-----------------------------------------------------------------------
+   525: ; ACTIVATION CHECK
+   526: ;-----------------------------------------------------------------------
+   527: ; Configure RX/TX Ports, wait for stable conditions when coldstart
+   528: ; and startbit of incoming auto-calibration character, else Timeout
+   529: 
+   530: WaitRX:
+   531:         sbi TXDDR, TXBIT                ; if RX=TX (One-Wire), port is
+   532:         cbi RXDDR, RXBIT                ; driven open collector style,
+   533:         sbi RXPORT, RXBIT               ; else RX is input with pullup
+   534:         sbi TXPORT, TXBIT               ; and TX preset logical High
+   535: 
+   536: ; power-up or brown-out resets - wait for RX to stabilize
+   537: WRX0To:
+   538:         sbic RXPIN, RXBIT               ; loop while RX = 0
+   539:         rjmp WRXSTo                     ; if RX = 1, start COM Timeout
+   540:         sbrc tmp4, EXTRF                ; in warmstart (external reset)
+   541:         rjmp APPJUMP                    ; we may skip this
+   542:         sbiw xl, 1                      ; use X for Timeout counter
+   543:         brcc WRX0To                     ; if timed out with 0 level
+   544:         rjmp APPJUMP                    ; goto APPJUMP in LASTPAGE
+   545: 
+   546: WRXSTo:                                 ; else
+   547:         rcall ZtoLASTPAGE               ; set Z to start'o'LASTPAGE
+   548:         adiw zl, 2                      ; skip first 2 bytes (APPJUMP)
+   549:         lpm xh, z+                      ; load TIMEOUT byte
+   550:         ldi xl, 128                     ; least delay
+   551: WRX1To:
+   552:         dec tmp1                        ; inner delay counter
+   553:         brne WRX1To                     ; also debouncing/denoising
+   554:         sbis RXPIN, RXBIT               ; if RX=0 (startbit) occurs
+   555:         rjmp Activate                   ; go Activate
+   556:         sbiw xl, 1                      ; use X for down counter
+   557:         brcc WRX1To                     ; to Timeout
+   558:         rjmp APPJUMP                    ; goto APPJUMP in LASTPAGE
+   559: 
+   560: ;-----------------------------------------------------------------------
+   561: ; BAUDRATE CALIBRATION CYCLE
+   562: ;-----------------------------------------------------------------------
+   563: ; Calibrate RS232-timing by leading autobaud characters ('@@@')
+   564: ; starting with definite HIGH level, all LOW levels may be count up
+   565: ;                databits
+   566: ;    startbit > s12345678S < stopbit
+   567: ;    1st byte : 0000000101   ALL 0-bits being measured
+   568: ; followed by : 0000000101   in the three characters
+   569: ; followed by : 0000000101   for good calibration
+   570: ; ... summing up to *24* bitcells providing good timing reference
+   571: ;
+   572: Activate:
+   573:         clr xl                          ; clear temporary
+   574:         clr xh                          ; baudrate counter
+   575:         ldi tmp1, 6                     ; number of expected bit-changes
+   576: actw1:
+   577:         sbic RXPIN, RXBIT               ; idle 1-states (stopbits, ones)
+   578:         rjmp actw1                      ; with NO Timeout
+   579: actw2:
+   580:         adiw xl, 1                      ; precision measuring loop
+   581:         sbis RXPIN, RXBIT               ; count clock cycles in 0-state
+   582:         rjmp actw2
+   583:         dec tmp1
+   584:         brne actw1
+   585: actwx:
+   586:         movw bclkl, xl                  ; save result to bclk
+   587: 
+   588: ;-----------------------------------------------------------------------
+   589: ; CHECK PASSWORD
+   590: ;-----------------------------------------------------------------------
+   591: ; Check Password, if existing. No feedback whatsoever while characters
+   592: ; are being received. Silent hangup with wrong characters submit.
+   593: ; After full and correct password has been entered, send device info.
+   594: ; Detect request for and execute an Emergency Erase.
+   595: ; uses: tmp1, tmp3, tmp4, Z (must point to LASTPAGE+3 at the beginning)
+   596: 
+   597: CheckPassword:
+   598: 
+   599: chpw0:  ser tmp4                        ; tmp4 = 255 enables comparison
+   600: chpw1:  lpm tmp3, z+                    ; load pw character from Z
+   601:         and tmp3, tmp4                  ; tmp4 = 0 disables comparison
+   602:         cpi tmp3, 255                   ; byte value 255 indicates
+   603:         breq chpwx                      ; end of password -> success
+   604: chpw2:  rcall Receivebyte               ; else receive next character
+   605:         cpi tmp1, 0                     ; rxbyte = 0 will branch
+   606:         breq chpwee                     ; to confirm emergency erase
+   607:         cp  tmp1, tmp3                  ; compare password with rxbyte
+   608:         breq chpw0                      ; if equal check next character
+   609:         clr  tmp4                       ; tmp4 = 0 to loop forever
+   610:         rjmp chpw1                      ; and smoothen power profile
+   611: chpwee:
+   612:         ; Fix for ISSUE #1: only check for Emergency Erase if we haven't
+   613: 		; gotten a wrong password; if we got a wrong password
+   614: 		; then we should stay in loop and not escape to Emergency
+   615: 		; Erase
+   616: 		cpi tmp4, 0						; if tmp4=0 we are set to loop forever
+   617: 		breq chpw1
+   618:         rcall RequestConfirm            ; request confirm
+   619:         brts chpa                       ; not confirmed, leave
+   620:         rcall RequestConfirm            ; request 2nd confirm
+   621:         brts chpa                       ; can't be mistake now
+   622:         rcall EmergencyErase            ; go, emergency erase!
+   623:         rjmp  Mainloop
+   624: chpa:
+   625:         rjmp APPJUMP                    ; start application
+   626: chpwx:
+   627: 
+   628: ;-----------------------------------------------------------------------
+   629: ; SEND DEVICEINFO
+   630: ;-----------------------------------------------------------------------
+   631: 
+   632: SendDeviceInfo:
+   633:         ldi zl, low (DEVICEINFO*2)      ; load address of deviceinfo
+   634:         ldi zh, high(DEVICEINFO*2)      ; low and highbyte
+   635:         ldi bcnt, INFOLEN*2
+   636:         rcall SendFromFlash
+   637: 
+   638: ;-----------------------------------------------------------------------
+   639: ; MAIN LOOP TO RECEIVE AND EXECUTE COMMANDS
+   640: ;-----------------------------------------------------------------------
+   641: 
+   642: Mainloop:
+   643:         clr zl                          ; clear Z pointer
+   644:         clr zh                          ; which is frequently used
+   645:         rcall SendConfirm               ; send CONFIRM via RS232
+   646:         rcall Receivebyte               ; receive command via RS232
+   647:         rcall CheckCommands             ; check command letter
+   648:         rjmp Mainloop                   ; and loop on
+   649: 
+   650: ;-----------------------------------------------------------------------
+   651: ; CHANGE USER DATA IN LASTPAGE
+   652: ;-----------------------------------------------------------------------
+   653: ; Receive page data and write into LASTPAGE
+   654: ; uses: Y, Z, r0, r1, tmp1, bcnt
+   655: 
+   656: ChangeSettings:
+   657:         rcall GetNewPage                ; get new LASTPAGE contents
+   658:         brtc ChangeS0                   ; from Host (if confirmed)
+   659:         ret
+   660: ChangeS0:
+   661:         rcall ZtoLASTPAGE               ; re-write LASTPAGE
+   662:         set                             ; T=1 to disable internal verify
+   663:         rcall WritePageAfterErase       ; erase and write LASTPAGE
+   664: 
+   665: ;-----------------------------------------------------------------------
+   666: ; SEND USER DATA FROM LASTPAGE
+   667: ;-----------------------------------------------------------------------
+   668: ; uses: bcnt
+   669: 
+   670: ControlSettings:
+   671:         rcall ZtoLASTPAGE               ; point to LASTPAGE
+   672: ;       rjmp SendPageFromFlash          ; send LASTPAGE over RS232
+   673: 
+   674: ;-----------------------------------------------------------------------
+   675: ; SEND DATA FROM FLASH MEMORY
+   676: ;-----------------------------------------------------------------------
+   677: ; Send bcnt number of flash memory bytes, count up Z accordingly
+   678: ; uses: tmp1, bcnt, Z
+   679: 
+   680: SendPageFromFlash:
+   681:         ldi bcnt, low (PAGESIZE*2)
+   682: SendFromFlash:
+   683:         lpm tmp1, z+                    ; read directly from flash
+   684:         rcall Transmitbyte              ; and send out to RS232
+   685:         dec bcnt                        ; bcnt is number of bytes
+   686:         brne SendFromFlash
+   687:         ret
+   688: 
+   689: ;-----------------------------------------------------------------------
+   690: ; READ APPLICATION FLASH
+   691: ;-----------------------------------------------------------------------
+   692: ; read and transmit application flash area (pagewise)
+   693: ; uses: Z (should be $0000 at the beginning), tmp1, bcnt
+   694: 
+   695: ReadAppFlash:
+   696: RAF0:   rcall RwaitConfirm
+   697:         brts RAFx
+   698:         rcall SendPageFromFlash
+   699: RAF1:   cpi zl, low (BOOTSTART*2)
+   700:         brne RAF0
+   701:         cpi zh, high(BOOTSTART*2)       ; count Z to end of flash
+   702:         brne RAF0
+   703: RAFx:
+   704:         ret
+   705: 
+   706: ;-----------------------------------------------------------------------
+   707: ; WRITE APPLICATION FLASH
+   708: ;-----------------------------------------------------------------------
+   709: ; Write Appflash pagewise, modify reset vector and RJMP APP
+   710: 
+   711: WriteAppFlash:
+   712:         rcall EraseAppFlash             ; Erase whole app flash
+   713:         rcall GetNewPage                ; get first page's data
+   714:         brtc Flash1                     ; continue on CONFIRM (T=0)
+   715:         ret                             ; abort with Flash erased (T=1)
+   716: 
+   717: Flash1:
+   718:         rcall YtoBUFFER
+   719: 
+   720: .if FLASHEND >= ($1fff)                 ; biggg ATtiny
+   721: 
+   722: .message "ATTINY OVER 16 KB USES JMP FOR MODIFIED RESET VECTOR"
+   723:         ldd avecl, y+2                  ; read address portion of JMP
+   724:         ldd avech, y+3                  ; directly into avecl/avech
+   725:         ldi tmp1, low (BOOTSTART)       ; generate new JMP target
+   726:         ldi tmp2, high(BOOTSTART)       ; (16 bits = byte 3+4)
+   727:         std y+2, tmp1                   ; write low/highbyte of changed
+   728:         std y+3, tmp2                   ; jump address into buffer
+   729: 
+   730: .else                                   ; small ATtiny
+   731: 
+   732: .message "ATTINY BELOW 16 KB USES RJMP FOR MODIFIED RESET VECTOR"
+   733:         ldd tmp1, y+0                   ; read bytes from original rjmp
+   734:         ldd tmp2, y+1                   ; into tmp1/tmp2
+   735:         subi tmp1, low (-(4096-LASTPAGE))      ; calculate
+   736:         sbci tmp2, high(-(4096-LASTPAGE))      ; rjmp APPSTART
+   737:         movw avecl, tmp1                ; save for later reference
+   738:         ldi tmp1, low (BOOTSTART-1 + $C000)     ; generate new opcode
+   739:         ldi tmp2, high(BOOTSTART-1 + $C000)     ; for rjmp BOOTSTART
+   740:         std y+0, tmp1                   ; replace rjmp in buffer
+   741:         std y+1, tmp2                   ; with rjmp BOOTSTART
+   742: .endif
+   743: 
+   744:         rcall WritePage                 ; write modified first page
+   745: Flash2:
+   746:         rcall GetNewPage                ; get next page to write
+   747:         brts FlashX                     ; stop on user's behalf
+   748: Flash3:
+   749:         rcall WritePage                 ; write page data into flash
+   750: Flash4:
+   751:         cpi zh, high(BOOTSTART*2-1)     ; check for end of Appflash
+   752:         brne Flash2                     ; if Z reached last location
+   753:         cpi zl, low (BOOTSTART*2-1)     ; then we are finished
+   754:         brne Flash2                     ; else go on
+   755: FlashX:
+   756:         rcall ReadLastPage              ; finally update LASTPAGE
+   757:         std y+0, avecl                  ; change first opcode
+   758:         std y+1, avech                  ; to jump target, then go
+   759:         rjmp WritePageafterErase
+   760: 
+   761: ;-----------------------------------------------------------------------
+   762: ; CHECK COMMANDS
+   763: ;-----------------------------------------------------------------------
+   764: ; Placed 'in between' to reach all subs by direct branches :-)
+   765: 
+   766: CheckCommands:
+   767:         cpi tmp1, 'c'                   ; read LASTPAGE
+   768:         breq ControlSettings
+   769:         cpi tmp1, 'C'                   ; write LASTPAGE
+   770:         breq ChangeSettings
+   771:         cpi tmp1, 'f'                   ; read Appflash
+   772:         breq ReadAppFlash
+   773:         cpi tmp1, 'F'                   ; write Appflash
+   774:         breq WriteAppFlash
+   775:         cpi tmp1, 'e'                   ; read EEPROM
+   776:         breq EEpromRead
+   777:         cpi tmp1, 'E'                   ; write EEPROM
+   778:         breq EEpromWrite
+   779:         rjmp APPJUMP                    ; else start application
+   780: 
+   781: ;-----------------------------------------------------------------------
+   782: ; EEPROM READ/WRITE ACCESS
+   783: ;-----------------------------------------------------------------------
+   784: ; Read or write full EEPROM address space
+   785: ; With blocksize = PAGESIZE * 2 (since PAGESIZE is defined in WORDS)
+   786: ; uses: Y, Z, tmp1, tmp3
+   787: 
+   788: EEpromRead:
+   789: EeRe1:
+   790:         rcall RwaitConfirm              ; wait to confirm
+   791:         brts EERWFx                     ; else we are finished
+   792:         ldi bcnt, low(PAGESIZE*2)       ; again PAGESIZE*2 is blocksize
+   793: EERe2:
+   794:         out EEARL, zl                   ; current EEPROM address low
+   795: .ifdef  EEARH
+   796:         out EEARH, zh                   ; current EEPROM address high
+   797: .endif
+   798:         sbi EECR, 0                     ; set EERE - EEPROM read enable
+   799:         in tmp1, EEDR                   ; read byte from current address
+   800:         rcall Transmitbyte              ; send out to RS232
+   801:         adiw zl,1                       ; count up EEPROM address
+   802:         dec bcnt                        ; count down block byte counter
+   803:         brne EERe2                      ; loop on if block not finished
+   804:         rjmp EERe1
+   805: 
+   806: ;-----------------------------------------------------------------------
+   807: 
+   808: EEpromWrite:
+   809: EEWr0:
+   810:         rcall GetNewPage                ; get EEPROM datablock
+   811:         brts EERWFx                     ; or abort on host's demand
+   812: EEWr1:
+   813:         rcall YtoBUFFER                 ; Y = Buffer and Bcnt = blocksize
+   814: EEWr2:
+   815:         ld tmp1, y+                     ; read EEPROM byte from buffer
+   816:         rcall EEWriteByte
+   817:         dec bcnt                        ; count down block byte counter
+   818:         brne EEWr2                      ; loop on if block not finished
+   819:         rjmp EeWr0
+   820: EERWFx:
+   821:         ret
+   822: 
+   823: ;-----------------------------------------------------------------------
+   824: 
+   825: EEWriteByte:
+   826:         out EEDR, tmp1                  ; write to EEPROM data register
+   827:         out EEARL, zl                   ; current EEPROM address low
+   828: .ifdef  EEARH
+   829:         out EEARH, zh                   ; high EEARH for some attinys
+   830: .endif
+   831:         sbi EECR, 2                     ; EEPROM master prog enable
+   832:         sbi EECR, 1                     ; EEPE initiate prog cycle
+   833: EeWB:
+   834:         sbic EECR, 1                    ; wait write cycle to complete
+   835:         rjmp EeWB                       ; before we can go on
+   836:         adiw zl,1                       ; count up EEPROM address
+   837:         ret
+   838: 
+   839: ;-----------------------------------------------------------------------
+   840: ; READ LASTPAGE INTO BUFFER
+   841: ;-----------------------------------------------------------------------
+   842: ; Page Address Z, SRAM buffer pointer Y, repoint Z to LASTPAGE
+   843: 
+   844: ReadLastPage:
+   845:         rcall ZtoLASTPAGE               ; reset Z to LASTPAGE start
+   846:         rcall YtoBUFFER                 ; reset Y to BUFFER start
+   847: ReLaPa:
+   848:         lpm tmp1, z+                    ; read byte from flash memory
+   849:         st y+, tmp1                     ; store in SRAM via Y pointer
+   850:         dec bcnt
+   851:         brne ReLaPa
+   852: ReLax:
+   853:         rcall ZtoLASTPAGE               ; reset Z to LASTPAGE start
+   854:         rjmp  YtoBUFFER                 ; reset Y to BUFFER start
+   855: 
+   856: ;-----------------------------------------------------------------------
+   857: ; GET NEW PAGE
+   858: ;-----------------------------------------------------------------------
+   859: ; Read page data into SRAM buffer
+   860: ; uses: X, tmp1, bcnt, SRAM
+   861: 
+   862: GetNewPage:
+   863:         rcall RequestConfirm            ; check for Confirm
+   864:         brts GNPx                       ; abort if not confirmed
+   865: GNP0:
+   866:         rcall YtoBUFFER                 ; Y = BUFFER, bcnt = PAGESIZE*2
+   867: GNP1:
+   868:         rcall ReceiveByte               ; receive serial byte
+   869:         st y+, tmp1                     ; and store in buffer
+   870:         dec bcnt                        ; until full page loaded
+   871:         brne GNP1                       ; loop on
+   872: GNPx:
+   873:         ret                             ; finished
+   874: 
+   875: ;-----------------------------------------------------------------------
+   876: ; REQUEST TO CONFIRM / AWAIT CONFIRM
+   877: ;-----------------------------------------------------------------------
+   878: ; Send REQUEST and wait answer from Host (received character in tmp1)
+   879: ; T=0: CONFIRM / T=1: NOT CONFIRM (any other char)
+   880: 
+   881: RequestConfirm:
+   882:         ldi tmp1, REQUEST               ; send request character
+   883:         rcall Transmitbyte              ; prompt to confirm (or not)
+   884: RwaitConfirm:
+   885:         rcall ReceiveByte               ; get host's reply
+   886:         clt                             ; set T=0 for confirm
+   887:         cpi tmp1, CONFIRM               ; if host HAS sent CONFIRM
+   888:         breq RCx                        ; return with the T=0
+   889:         set                             ; else set T=1 (NOT CONFIRMED)
+   890: RCx:    ret                             ; whether confirmed or not
+   891: 
+   892: ;-----------------------------------------------------------------------
+   893: ; WRITE FLASH PAGES FROM BUFFER, VERIFYING AND VERIFY-ERROR-HANDLING
+   894: ;-----------------------------------------------------------------------
+   895: ; uses: r0, r1, Y, Z, tmp1, tmp2, bcnt
+   896: ; Z must point to start address of page to be written.
+   897: ; Z is left at the start address of next page.
+   898: ; T=0 for internal verifying and EraseAppFlash on any verifying error
+   899: ; T=1 to skip verifying and ignore errors
+   900: 
+   901: .if FOURPAGES == 0      ; assembly option for normal page mode
+   902: 
+   903: WritePageafterErase:
+   904:         rcall EraseFlashPage
+   905: WritePage:
+   906:         rcall YtoBUFFER                 ; Y=BUFFER, bcnt=PAGESIZE*2
+   907: WrPa1:
+   908:         ld r0, y+                       ; fill R0/R1 with word
+   909:         ld r1, y+                       ; from buffer position Y / Y+1
+   910:         ldi tmp1, 0b00000001            ; set only SPMEN in SPMCSR
+   911:         out SPMCSR, tmp1                ; to activate page buffering
+   912:         spm                             ; store word in page buffer
+   913:         adiw zl, 2                      ; and forward to next word
+   914:         subi bcnt, 2
+   915:         brne WrPa1
+   916:         ; Z = start of next page now
+   917:         subi zl, low (PAGESIZE*2)       ; point back Z to
+   918:         sbci zh, high(PAGESIZE*2)       ; start of current page
+   919:         ; Z = back on current page's start
+   920: WrPa2:
+   921:         ldi tmp1, 0b00000101            ; enable PRWRT + SPMEN
+   922:         out SPMCSR, tmp1                ; in SPMCSR
+   923:         spm                             ; write whole page to flash
+   924: WrPa3:
+   925:         in tmp1, SPMCSR                 ; wait for flash write finished
+   926:         sbrc tmp1, 0                    ; skip if SPMEN (bit0) cleared
+   927:         rjmp WrPa3                      ; ITS BEEN WRITTEN
+   928: 
+   929: ;-----------------------------------------------------------------------
+   930: ; INTERNAL VERIFY AGAINST BUFFER CONTENTS
+   931: ;-----------------------------------------------------------------------
+   932: ; If verify of any page in AppFlash has FAILED, the program code and/or
+   933: ; reset-vector may be corrupted - danger of bootloader lock-out!
+   934: ; It is better then to IMMEDIATELY ERASE ALL APPLICATION FLASH
+   935: ; to make sure the bootloader remains accessible by the next session
+   936: ; (with option for a new write attempt).
+   937: 
+   938: VerifyPage:
+   939:         rcall YtoBUFFER                 ; Y=BUFFER, bcnt=PAGESIZE*2
+   940: WrPV1:
+   941:         lpm tmp1, z+                    ; load flash byte
+   942:         ld tmp2,  y+                    ; load buffer byte
+   943:         cp tmp1, tmp2                   ; else compare
+   944:         breq WrPV2                      ; if EQUAL loop on
+   945:         brts WrPV2                      ; T=1 skips verify consequences
+   946:         rcall SendConfirm               ; in case of verify error
+   947:         rcall EraseAppFlash             ; erase appflash and freeze
+   948: WrPVf:  rjmp WrPVf                      ; for bootloader's sake
+   949: WrPV2:
+   950:         dec bcnt                        ; count down page bytecounter
+   951:         brne WrPV1                      ; loop until all bytes checked
+   952: WrPx:
+   953:         ret
+   954: 
+   955: .endif                  ; end of assembly for normal page devices
+   956: 
+   957: ;-----------------------------------------------------------------------
+   958: 
+   959: .if FOURPAGES == 1                      ; 4-Page Erase+Write (tn441/841)
+   960:                                         ; for real PAGESIZE of 8 Words
+   961: WritePageafterErase:
+   962:         rcall EraseFlashPage
+   963: WritePage:
+   964:         rcall YtoBUFFER
+   965:         ldi tmp3, 4
+   966: WrPa4P:
+   967:         ldi bcnt, 16
+   968: WrPa1:
+   969:         ld r0, y+                       ; fill R0/R1 with word
+   970:         ld r1, y+                       ; from buffer position Y / Y+1
+   971:         ldi tmp1, 0b00000001            ; set only SPMEN in SPMCSR
+   972:         out SPMCSR, tmp1                ; to activate page buffering
+   973:         spm                             ; store word in page buffer
+   974:         adiw zl, 2                      ; and forward to next word
+   975:         subi bcnt, 2
+   976:         brne WrPa1
+   977:         sbiw zl, 16                     ; Z back to start of real-page
+   978: WrPa2:
+   979:         ldi tmp1, 0b00000101            ; enable PGWRT + SPMEN
+   980:         out SPMCSR, tmp1                ; in SPMCSR
+   981:         spm                             ; write sub-page to flash
+   982: WrPa3:
+   983:         in tmp1, SPMCSR                 ; wait for flash write finished
+   984:         sbrc tmp1, 0                    ; skip if SPMEN (bit0) cleared
+   985:         rjmp WrPa3                      ; ITS BEEN WRITTEN
+   986: 
+   987:         ldi bcnt, 16
+   988:         sbiw yl, 16                     ; back to start of real-page
+   989: 
+   990: WrPV1:
+   991:         lpm tmp1, z+                    ; load flash byte
+   992:         ld tmp2,  y+                    ; load buffer byte
+   993:         cp tmp1, tmp2                   ; else compare
+   994:         breq WrPV2                      ; if EQUAL loop on
+   995:         brts WrPV2                      ; T=1 skips verify consequences
+   996:         rcall SendConfirm               ; in case of verify error
+   997:         rcall EraseAppFlash             ; erase appflash and freeze
+   998: WrPVf:  rjmp WrPVf                      ; for bootloader's sake
+   999: 
+  1000: WrPV2:
+  1001:         dec bcnt                        ; count down page bytecounter
+  1002:         brne WrPV1                      ; loop until all bytes checked
+  1003: WrPx:
+  1004:         dec tmp3                        ; count all 4 sub-pages
+  1005:         brne WrPa4P                     ; to be written from buffer
+  1006:         ret
+  1007: .endif          ; end of exclusive assembly for 4-page devices
+  1008: 
+  1009: ;-----------------------------------------------------------------------
+  1010: ; FLASH ERASE TOP-TO-BOTTOM ( (BOOTSTART-1) ... $0000)
+  1011: ;-----------------------------------------------------------------------
+  1012: ; uses: Z, tmp1
+  1013: 
+  1014: EraseAppFlash:
+  1015:         ldi zl, low (BOOTSTART*2)       ; point Z to BOOTSTART
+  1016:         ldi zh, high(BOOTSTART*2)       ; 1st page's 1st address
+  1017: EAF0:
+  1018:         subi zl, low (PAGESIZE*2)       ; start erasing
+  1019:         sbci zh, high(PAGESIZE*2)       ; one page below
+  1020:         rcall EraseFlashPage            ; then erase pagewise down
+  1021:         brne EAF0                       ; until first page reached
+  1022: EAFx:   ret                             ; and leave with Z = $0000
+  1023: 
+  1024: ;-----------------------------------------------------------------------
+  1025: ; ERASE FLASH / EEPROM / USERDATA
+  1026: ;-----------------------------------------------------------------------
+  1027: ; uses: Z, tmp1
+  1028: 
+  1029: EmergencyErase:
+  1030:         rcall EraseAppFlash             ; first kill AppFlash contents
+  1031:         ser tmp1
+  1032: EEE0:
+  1033:         rcall EEWriteByte               ; write EEPROM byte, Z = Z + 1
+  1034:         cpi zh, high(EEPROMEND+1)+2     ; EEPROMEND
+  1035:         brne EEE0                       ; and loop on until finished
+  1036: 
+  1037:         rcall ZtoLASTPAGE               ; to finally
+  1038: ;       rjmp EraseFlashPage             ; erase LASTPAGE (below)
+  1039: 
+  1040: ;-----------------------------------------------------------------------
+  1041: ; ERASE FLASH PAGE
+  1042: ;-----------------------------------------------------------------------
+  1043: ; NOTE: with tn441/841 this implies 4-page erased at once
+  1044: 
+  1045: EraseFlashPage:
+  1046:         ldi tmp1, 0b00000011            ; enable PGERS + SPMEN
+  1047:         out SPMCSR, tmp1                ; in SPMCSR and erase current
+  1048:         spm                             ; page by SPM (MCU halted)
+  1049:         ret                             ; then return
+  1050: 
+  1051: ;-----------------------------------------------------------------------
+  1052: ; OTHER SUBROUTINES
+  1053: ;-----------------------------------------------------------------------
+  1054: 
+  1055: YtoBUFFER:
+  1056:         ldi yl, low (BUFFER)            ; reset pointer
+  1057:         ldi yh, high(BUFFER)            ; to programming buffer
+  1058:         ldi bcnt, low(PAGESIZE*2)       ; and often needed
+  1059:         ret
+  1060: 
+  1061: ;-----------------------------------------------------------------------
+  1062: 
+  1063: ZtoLASTPAGE:
+  1064:         ldi zl, low (LASTPAGE*2)        ; reset Z to LASTPAGE start
+  1065:         ldi zh, high(LASTPAGE*2)
+  1066:         ret
+  1067: 
+  1068: ;-----------------------------------------------------------------------
+  1069: ; RS232 RECEIVE BYTE
+  1070: ;-----------------------------------------------------------------------
+  1071: ; uses: tmp1 (received data byte), tmp2 (bitcounter)
+  1072: 
+  1073: ReceiveByte:
+  1074:         sbi RXPORT, RXBIT               ; set pullup for RX
+  1075: Recb1:
+  1076:         sbic RXPIN, RXBIT               ; wait for startbit (0)
+  1077:         rjmp Recb1                      ; loop whilst in stop state (1)
+  1078: Recb2:
+  1079:         ldi tmp2, 8                     ; bitcounter
+  1080:         rcall Waithalfbitcell           ; go center of startbit
+  1081: Recb3:
+  1082:         rcall Waitbitcell               ; tune to center of bitcell
+  1083:         lsr tmp1                        ; right shift 0 into bit 7
+  1084:         sbic RXPIN, RXBIT               ; if RXD bit is 1 now
+  1085:         sbr tmp1, 0b10000000            ; set bit 7 in RX byte
+  1086: Recb4:
+  1087:         dec tmp2                        ; count down bitcounter
+  1088:         brne Recb3                      ; loop until 8 bits collected
+  1089: 
+  1090: 		; bugfix for starting TX too early
+  1091: 		; original code, rjmp to Waitbitcell which essentially returned
+  1092: 		; when we were at the middle of the stop bit;
+  1093: 		; if we are responding with a TX of a character, we'll be too
+  1094: 		; early because we haven't waited for the rest of the stop bit.
+  1095: 		; so we need to advance Half a bit to the end of the last data bit
+  1096: 		; AND THEN wait a full bit cell
+  1097: 		rcall Waithalfbitcell           ; advance to the edge of the data bit
+  1098: 		
+  1099:         rjmp Waitbitcell                ; wait for the end of stopbit
+  1100: 
+  1101: 
+  1102: ;-----------------------------------------------------------------------
+  1103: ; RS232 SEND CONFIRM CHARACTER
+  1104: ;-----------------------------------------------------------------------
+  1105: 
+  1106: SendConfirm:
+  1107:         ldi tmp1, CONFIRM
+  1108:         ;rjmp Transmitbyte
+  1109: 
+  1110: ;-----------------------------------------------------------------------
+  1111: ; RS232 TRANSMIT BYTE
+  1112: ;-----------------------------------------------------------------------
+  1113: ; uses: tmp1 (transmit byte will be shifted out), tmp2 (bitcounter)
+  1114: ;
+  1115: ; with different portlines defined for RX and TX ("Two-Wire")
+  1116: ; => TX-line is actively driving high/low levels (LSTTL/HCMOS)
+  1117: ;
+  1118: ; with the same portline defined for RX and TX ("One-Wire")
+  1119: ; => TX-line is acting like an open collector/drain with weak pullup
+  1120: 
+  1121: TransmitByte:
+  1122:         rcall Waitbitcell               ; ensure safe RX-TX transition
+  1123:         rcall Trx0                      ; transmit 0 = startbit
+  1124:         ldi tmp2, 8                     ; set bitcounter
+  1125: Trxbit:                                 ; transmit byte loop
+  1126:         sbrc tmp1, 0
+  1127:         rcall Trx1                      ; sent logical 1 bitcell
+  1128:         sbrs tmp1, 0                    ; or
+  1129:         rcall Trx0                      ; sent logical 0 bitcell
+  1130:         lsr tmp1                        ; shift out that bit
+  1131:         dec tmp2                        ; count down
+  1132:         brne Trxbit                     ; loop until all bits sent								
+  1133: 										
+  1134: Trx1:
+  1135:         sbi TXDDR, TXBIT                ; if RX=TX (One-Wire), result is
+  1136:         cbi RXDDR, RXBIT                ; pullup to Vcc for "1" (high-Z)
+  1137:         sbi TXPORT, TXBIT               ; else portbit actively driven
+  1138:         rjmp Waitbitcell
+  1139: Trx0:
+  1140:         sbi TXDDR, TXBIT                ; set TX driver for output
+  1141:         cbi TXPORT, TXBIT               ; set portbit to active "0"
+  1142: ;       rjmp Waitbitcell                ; continue with Waitbitcell
+  1143: 
+  1144: ;-----------------------------------------------------------------------
+  1145: ; RS232 PRECISION TIMING
+  1146: ;-----------------------------------------------------------------------
+  1147: ; input: bclkh, bclkl   (division-factor for bitcells at given baudrate)
+  1148: 
+  1149: Waitbitcell:
+  1150:         movw xl, bclkl                  ; load bitcell clock timer
+  1151: wbc1:
+  1152:         sbiw xl, 24                     ; same number of clocks
+  1153:         nop                             ; as in calibration loop
+  1154:         brcc wbc1
+  1155: wbcx:   ret
+  1156: 
+  1157: Waithalfbitcell:
+  1158:         movw xl, bclkl                  ; load bitcell clock timer
+  1159:         lsr xh                          ; shift out bit 0 of xh to carry
+  1160:         ror xl                          ; carry shifted in bit 7 of xl
+  1161:         rjmp wbc1                       ; run timer with 1/2 divider
+  1162: 
+  1163: ;-----------------------------------------------------------------------
+  1164: ; DEVICE INFO BLOCK = PERMANENT DATA
+  1165: ;-----------------------------------------------------------------------
+  1166: ; 16 bytes of permanent data identifying bootloader and device
+  1167: 
+  1168: .if TSBINSTALLER == 0
+  1169:         .org DEVICEINFO         ; TSB for ATtiny on target address
+  1170: .else
+  1171:         .org TDEVICEINFO        ; TSB-Installer temporary address
+  1172: .endif
+  1173: 
+  1174: .message "DEVICE INFO BLOCK FOR ATTINY"
+  1175: 
+  1176: .db "tsb", low (BUILDDATE), high (BUILDDATE), BUILDSTATE
+  1177: .db SIGNATURE_000, SIGNATURE_001, SIGNATURE_002, low (PAGESIZE)
+  1178: .dw BOOTSTART
+  1179: .dw EEPROMEND
+  1180: 
+  1181: .if FLASHEND >= ($1fff)         ; check for device >= 16 KB
+  1182:         APPJUMP:
+  1183:         .db $0C, $94            ; first two bytes (opcode) for a JMP!
+  1184: .else
+  1185:         .db $00, $00
+  1186:         APPJUMP:
+  1187: .endif
+  1188: 
+  1189: ;-----------------------------------------------------------------------
+  1190: ; LASTPAGE WITH APPLICATION-JUMP, TIMEOUT, PASSWORD (USER DATA)
+  1191: ;-----------------------------------------------------------------------
+  1192: ; Leaving this page blank ($FF) will be safe defaults
+  1193: 
+  1194: RLASTPAGE:           ; reference label for end of fixed TSB code
+  1195:                      ; in TSB/TSB-Installer (LASTPAGE)
+  1196: ; Check for correct alignment of TSB code when assembled to target
+  1197: 
+  1198: .if (RLASTPAGE == CLASTPAGE)
+  1199:         .message "TSB CODE IS PROPERLY ALIGNED"
+  1200: .endif
+  1201: 
+  1202: .if (RLASTPAGE >  CLASTPAGE)
+  1203:         .message "WARNING: TSB CODE IS TOO LARGE!"
+  1204: .endif
+  1205: 
+  1206: .message "ASSEMBLY OF TSB FOR ATTINY SUCCESSFULLY FINISHED!"
+  1207: 
+  1208: .endif          ; this endif closes assembly of TSB for ATtinys
+  1209: 
+  1210: ;***********************************************************************
+  1211: ; END OF TSB FOR ATTINYS
+  1212: ;***********************************************************************
+  1213: ;
+  1214: ;
+  1215: ;
+  1216: ;
+  1217: ;
+  1218: ;***********************************************************************
+  1219: ;***********************************************************************
+  1220: ;***********************************************************************
+  1221: ; START OF TSB FOR ATMEGAS
+  1222: ;***********************************************************************
+  1223: ;***********************************************************************
+  1224: ;***********************************************************************
+  1225: ;
+  1226: ; TSB for ATmegas is always coded directly to target address.
+  1227: 
+  1228: .if TINYMEGA == 1
+  1229: 
+  1230: .message "ASSEMBLY OF TSB FOR ATMEGA"
+ -> Message: ASSEMBLY OF TSB FOR ATMEGA
+   File: main.asm, Line: 1230
+  1231: 
+  1232: .equ    BOOTSTART       = (FLASHEND+1)-256      ; = 512 Bytes
+  1233: .equ    LASTPAGE        = BOOTSTART - PAGESIZE  ; = 1 page below TSB!
+  1234: 
+  1235: .org    BOOTSTART
+  1236: 
+  1237: RESET:
+  1238: 000F00   94F8  cli
+  1239: 
+  1240: 000F01   B734  in tmp4, MCUSR                  ; check reset condition
+  1241: 000F02   FD33  sbrc tmp4, WDRF                 ; in case of a Watchdog reset
+  1242: 000F03   C017  rjmp APPJUMP                    ; immediately leave TSB
+  1243: 
+  1244: 000F04   EF0F  ldi tmp1, low (RAMEND)          ; write ramend low
+  1245: 000F05   BF0D  out SPL, tmp1                   ; into SPL (stackpointer low)
+  1246: .ifdef SPH
+  1247: 000F06   E004  ldi tmp1, high(RAMEND)          ; write ramend high for ATtinys
+  1248: 000F07   BF0E  out SPH, tmp1                   ; with SRAM > 256 bytes
+  1249: .endif
+  1250: 
+  1251: ;-----------------------------------------------------------------------
+  1252: ; ACTIVATION CHECK
+  1253: ;-----------------------------------------------------------------------
+  1254: 
+  1255: WaitRX:
+  1256: 000F08   9A22  sbi TXDDR, TXBIT                ; if RX=TX (One-Wire), port is
+  1257: 000F09   9852  cbi RXDDR, RXBIT                ; driven open collector style,
+  1258: 000F0A   9A5A  sbi RXPORT, RXBIT               ; else RX is input with pullup
+  1259: 000F0B   9A2A  sbi TXPORT, TXBIT               ; and TX preset logical High
+  1260: 
+  1261: ; coldstart (power-up) - wait for RX to stabilize
+  1262: WRX0To:
+  1263: 000F0C   994A  sbic RXPIN, RXBIT               ; 1st stage - loop while RX = 0
+  1264: 000F0D   C003  rjmp WRXSTo                     ; if RX = 1, start COM Timeout
+  1265: 000F0E   9711  sbiw xl, 1                      ; use X for fast countdown
+  1266: 000F0F   F7E0  brcc WRX0To                     ; if timed out with 0 level
+  1267: 000F10   C00A  rjmp APPJUMP                    ; goto APPJUMP in LASTPAGE
+  1268: WRXSTo:                                 ; else
+  1269: 000F11   D0BD  rcall ZtoLASTPAGE               ; set Z to start'o'LASTPAGE
+  1270: 000F12   9632  adiw zl, 2                      ; skip first 2 bytes (the first 2 are the appstart address)
+  1271: 000F13   91B5  lpm xh, z+                      ; load TIMEOUT byte
+  1272: 000F14   E8A0  ldi xl, 128
+  1273: 
+  1274: WRX1To:
+  1275: 000F15   950A  dec tmp1                        ; inner counter to delay
+  1276: 										; tmp1 is initialized from when we set RAMEND
+  1277: 										; and then it seems it keeps overflowing
+  1278: 										; but the whole thing should happen in nanoseconds
+  1279: 										; it counts a full overflow cycle before every
+  1280: 										; decrement of the the xl counter
+  1281: 000F16   F7F1  brne WRX1To                     ; for debouncing/denoising
+  1282: 000F17   9B4A  sbis RXPIN, RXBIT               ; if serial startbit occurs
+  1283: 000F18   C004  rjmp Activate                   ; go Activate
+  1284: 000F19   9711  sbiw xl, 1                      ; use X for down counter
+  1285: 000F1A   F7D0  brcc WRX1To                     ; to Timeout
+  1286:         ;rjmp APPJUMP                   ; Timeout! Goto APPJUMP
+  1287: 
+  1288: ;-----------------------------------------------------------------------
+  1289: ; ATMEGA APPJUMP = SIMPLE JUMP TO $0000 (ORIGINAL RESET VECTOR)
+  1290: ;-----------------------------------------------------------------------
+  1291: ; Boot Reset Vector (BOOTRST) must be activated for TSB on ATmegas.
+  1292: ; After timeout or executing commands, TSB for ATmegas will simply
+  1293: ; handover to the App by a (relative or absolute) jump to $0000.
+  1294: 
+  1295: APPJUMP:
+  1296: 000F1B   D0A8  rcall SPMwait                   ; make sure everything's done
+  1297: 
+  1298: 
+  1299: .if FLASHEND >= ($1fff)
+  1300:         jmp  $0000                      ; absolute jump
+  1301: .else
+  1302: 000F1C   CFE3  rjmp RESET ;$0000                      ; relative jump
+  1303: .endif
+  1304: 
+  1305: 
+  1306: ;-----------------------------------------------------------------------
+  1307: ; BAUDRATE CALIBRATION CYCLE
+  1308: ;-----------------------------------------------------------------------
+  1309: 
+  1310: Activate:
+  1311: 000F1D   27AA  clr xl                          ; clear temporary
+  1312: 000F1E   27BB  clr xh                          ; baudrate counter
+  1313: 000F1F   E006  ldi tmp1, 6                     ; number of expected bit-changes
+  1314: 										; because activation sequence is @@@
+  1315: 										; @ = 64 = b01000000
+  1316: 										; so for every byte you have 1x0 (start bit) + 6x0 (for the byte itself)
+  1317: 										; and you will see the change from 0-1 on the 7th bit and the stop bit
+  1318: 										; so 2 times per byte; therefore, since we have 3 bytes we get 6 changes
+  1319: 										; also note we only decrement tmp1 on transitions from 0-1
+  1320: 										; we will also count the time for 24x0s in total: 1x start bit + 7 data bits at 0 = 8bits
+  1321: 										; 8bits X 3chars (3x@) = 24x0s
+  1322: actw1:
+  1323: 000F20   994A  sbic RXPIN, RXBIT               ; idle 1-states (stopbits, ones)
+  1324: 000F21   CFFE  rjmp actw1
+  1325: actw2:
+  1326: 000F22   9611  adiw xl, 1                      ; precision measuring loop
+  1327: 000F23   9B4A  sbis RXPIN, RXBIT               ; count clock cycles
+  1328: 000F24   CFFD  rjmp actw2                      ; while RX is 0-state
+  1329: 000F25   950A  dec tmp1
+  1330: 000F26   F7C9  brne actw1
+  1331: actwx:
+  1332: 000F27   013D  movw bclkl, xl                  ; save result in bclk
+  1333: 
+  1334: ;-----------------------------------------------------------------------
+  1335: ; CHECK PASSWORD / EMERGENCY ERASE
+  1336: ;-----------------------------------------------------------------------
+  1337: 
+  1338: CheckPassword:
+  1339: 000F28   EF3F  ser tmp4                        ; tmp4 = 255 enables comparison
+  1340: 000F29   9125  lpm tmp3, z+                    ; load pw character from Z
+  1341: 000F2A   2323  and tmp3, tmp4                  ; tmp3 = 0 disables comparison
+  1342: 000F2B   3F2F  cpi tmp3, 255                   ; byte value 255 indicates
+  1343: 000F2C   F081  breq chpwx                      ; end of password -> success
+  1344: 000F2D   D0A4  rcall Receivebyte               ; else receive next character
+  1345: 000F2E   3000  cpi tmp1, 0                     ; rxbyte = 0 will branch
+  1346: 000F2F   F021  breq chpwee                     ; to confirm emergency erase
+  1347: 000F30   1702  cp  tmp1, tmp3                  ; compare password with rxbyte
+  1348: 000F31   F3B1  breq chpw0                      ; if equal check next character
+  1349: 000F32   2733  clr  tmp4                       ; tmp4 = 0 to loop forever
+  1350: 000F33   CFF5  rjmp chpw1                      ; all to smoothen power profile
+  1351: chpwee:
+  1352:         ; Fix for ISSUE #1: only check for Emergency Erase if we haven't
+  1353: 		; gotten a wrong password; if we got a wrong password
+  1354: 		; then we should stay in loop and not escape to Emergency
+  1355: 		; Erase
+  1356: 000F34   3030  cpi tmp4, 0						; if tmp4=0 we had decided before to loop forever (wrong password)
+  1357: 000F35   F399  breq chpw1						; so go back to the cycle to pull chars and no emergency erase
+  1358: 000F36   D076  rcall RequestConfirm            ; request confirmation
+  1359: 000F37   F026  brts chpa                       ; not confirmed, leave
+  1360: 000F38   D074  rcall RequestConfirm            ; request 2nd confirmation
+  1361: 000F39   F016  brts chpa                       ; can't be mistake now
+  1362: 000F3A   D080  rcall EmergencyErase            ; go, emergency erase!
+  1363: 000F3B   C005  rjmp  Mainloop
+  1364: chpa:
+  1365: 000F3C   CFDE  rjmp APPJUMP                    ; start application
+  1366: chpwx:
+  1367: ;       rjmp SendDeviceInfo             ; go on to SendDeviceInfo
+  1368: 
+  1369: ;-----------------------------------------------------------------------
+  1370: ; SEND DEVICEINFO
+  1371: ;-----------------------------------------------------------------------
+  1372: 
+  1373: SendDeviceInfo:
+  1374: 000F3D   EFE0  ldi zl, low (DEVICEINFO*2)      ; load address of deviceinfo
+  1375: 000F3E   E1FF  ldi zh, high(DEVICEINFO*2)      ; low and highbyte
+  1376: 000F3F   E140  ldi bcnt, INFOLEN*2
+  1377: 000F40   D00E  rcall SendFromFlash
+  1378: 
+  1379: ;-----------------------------------------------------------------------
+  1380: ; MAIN LOOP TO RECEIVE AND EXECUTE COMMANDS
+  1381: ;-----------------------------------------------------------------------
+  1382: 
+  1383: Mainloop:
+  1384: 000F41   27EE  clr zl                          ; clear Z pointer
+  1385: 000F42   27FF  clr zh                          ; which is frequently used
+  1386: 000F43   D099  rcall SendConfirm               ; send CONFIRM via RS232
+  1387: 000F44   D08D  rcall Receivebyte               ; receive command via RS232
+  1388: 000F45   D034  rcall CheckCommands             ; check command letter
+  1389: 000F46   CFFA  rjmp Mainloop                   ; and loop on
+  1390: 
+  1391: ;-----------------------------------------------------------------------
+  1392: ; CHANGE USER DATA IN LASTPAGE
+  1393: ;-----------------------------------------------------------------------
+  1394: 
+  1395: ChangeSettings:
+  1396: 000F47   D05D  rcall GetNewPage                ; get new LASTPAGE contents
+  1397: 000F48   F40E  brtc ChangeS0                   ; from Host (if confirmed)
+  1398: 000F49   9508  ret
+  1399: ChangeS0:
+  1400: 000F4A   D084  rcall ZtoLASTPAGE               ; re-write LASTPAGE
+  1401: 000F4B   D075  rcall EraseFlashPage
+  1402: 000F4C   D019  rcall WritePage                 ; erase and write LASTPAGE
+  1403: 
+  1404: ;-----------------------------------------------------------------------
+  1405: ; SEND USER DATA FROM LASTPAGE
+  1406: ;-----------------------------------------------------------------------
+  1407: 
+  1408: ControlSettings:
+  1409: 000F4D   D081  rcall ZtoLASTPAGE               ; point to LASTPAGE
+  1410: ;       rcall SendPageFromFlash
+  1411: 
+  1412: ;-----------------------------------------------------------------------
+  1413: ; SEND DATA FROM FLASH MEMORY
+  1414: ;-----------------------------------------------------------------------
+  1415: 
+  1416: SendPageFromFlash:
+  1417: 000F4E   E440  ldi bcnt, low (PAGESIZE*2)      ; whole Page to send
+  1418: SendFromFlash:
+  1419: 000F4F   D074  rcall SPMwait                   ; (re)enable RWW read access
+  1420: 000F50   9105  lpm tmp1, z+                    ; read directly from flash
+  1421: 000F51   D08C  rcall Transmitbyte              ; and send out to RS232
+  1422: 000F52   954A  dec bcnt                        ; bcnt is number of bytes
+  1423: 000F53   F7D9  brne SendFromFlash
+  1424: 000F54   9508  ret
+  1425: 
+  1426: ;-----------------------------------------------------------------------
+  1427: ; READ APPLICATION FLASH
+  1428: ;-----------------------------------------------------------------------
+  1429: ; read and transmit application flash area (pagewise)
+  1430: 
+  1431: ReadAppFlash:
+  1432: RAF0:
+  1433: 000F55   D059  rcall RwaitConfirm
+  1434: 000F56   F02E  brts RAFx
+  1435: 000F57   DFF6  rcall SendPageFromFlash
+  1436: RAF1:
+  1437: 000F58   3CE0  cpi zl, low (LASTPAGE*2)        ; count up to last byte
+  1438: 000F59   F7D9  brne RAF0                       ; below LASTPAGE
+  1439: 000F5A   31FD  cpi zh, high(LASTPAGE*2)
+  1440: 000F5B   F7C9  brne RAF0
+  1441: RAFx:
+  1442: 000F5C   9508  ret
+  1443: 
+  1444: ;-----------------------------------------------------------------------
+  1445: ; WRITE APPLICATION FLASH
+  1446: ;-----------------------------------------------------------------------
+  1447: ; Write Appflash pagewise, don't modify anything for ATmegas
+  1448: 
+  1449: WriteAppFlash:
+  1450: 000F5D   D057  rcall EraseAppFlash             ; Erase whole app flash
+  1451: Flash2:
+  1452: 000F5E   D046  rcall GetNewPage                ; get next page from host
+  1453: 000F5F   F02E  brts FlashX                     ; stop on user's behalf
+  1454: Flash3:
+  1455: 000F60   D005  rcall WritePage                 ; write page data into flash
+  1456: Flash4:
+  1457: 000F61   31FD  cpi zh, high(LASTPAGE*2-1)      ; end of available Appflash?
+  1458: 000F62   F7D9  brne Flash2                     ; if Z reached last location
+  1459: 000F63   3BEF  cpi zl, low (LASTPAGE*2-1)      ; then we are finished
+  1460: 000F64   F7C9  brne Flash2                     ; else go on
+  1461: FlashX:
+  1462: 000F65   9508  ret                             ; we're already finished!
+  1463: 
+  1464: ;-----------------------------------------------------------------------
+  1465: ; WRITE FLASH PAGE FROM BUFFER, VERIFYING AND VERIFY-ERROR-HANDLING
+  1466: ;-----------------------------------------------------------------------
+  1467: 
+  1468: WritePage:
+  1469: 000F66   D064  rcall YtoBUFFER                 ; Y=BUFFER, bcnt=PAGESIZE*2
+  1470: WrPa1:
+  1471: 000F67   9009  ld r0, y+                       ; fill R0/R1 with word
+  1472: 000F68   9019  ld r1, y+                       ; from buffer position Y / Y+1
+  1473: 000F69   E001  ldi tmp1, 0b00000001            ; set only SPMEN in SPMCSR
+  1474: 000F6A   BF07  out SPMCSR, tmp1                ; to activate page buffering
+  1475: 000F6B   95E8  spm                             ; store word in page buffer
+  1476: 000F6C   9632  adiw zl, 2                      ; and forward to next word
+  1477: 000F6D   5042  subi bcnt, 2
+  1478: 000F6E   F7C1  brne WrPa1
+  1479:         ; Z = start of next page now
+  1480: 000F6F   54E0  subi zl, low (PAGESIZE*2)       ; point back Z to
+  1481: 000F70   40F0  sbci zh, high(PAGESIZE*2)       ; start of current page
+  1482:         ; Z = back on current page's start
+  1483: WrPa2:
+  1484: 000F71   E005  ldi tmp1, 0b00000101            ; enable PRWRT + SPMEN
+  1485: 000F72   BF07  out SPMCSR, tmp1                ; in SPMCSR
+  1486: 000F73   95E8  spm                             ; write whole page to flash
+  1487: WrPa3:
+  1488: 000F74   B707  in tmp1, SPMCSR                 ; wait for flash write finished
+  1489: 000F75   FD00  sbrc tmp1, 0                    ; skip if SPMEN (bit0) cleared
+  1490: 000F76   CFFD  rjmp WrPa3                      ; ITS BEEN WRITTEN
+  1491: 000F77   5CE0  subi zl, low (-PAGESIZE*2)      ; same effect as
+  1492: 000F78   4FFF  sbci zh, high(-PAGESIZE*2)      ; Z = Z + PAGESIZE*2
+  1493: 000F79   9508  ret
+  1494: 
+  1495: ;-----------------------------------------------------------------------
+  1496: ; CHECK COMMANDS
+  1497: ;-----------------------------------------------------------------------
+  1498: 
+  1499: CheckCommands:
+  1500: 000F7A   3603  cpi tmp1, 'c'                   ; read LASTPAGE
+  1501: 000F7B   F289  breq ControlSettings
+  1502: 000F7C   3403  cpi tmp1, 'C'                   ; write LASTPAGE
+  1503: 000F7D   F249  breq ChangeSettings
+  1504: 000F7E   3606  cpi tmp1, 'f'                   ; read Appflash
+  1505: 000F7F   F2A9  breq ReadAppFlash
+  1506: 000F80   3406  cpi tmp1, 'F'                   ; write Appflash
+  1507: 000F81   F2D9  breq WriteAppFlash
+  1508: 000F82   3605  cpi tmp1, 'e'                   ; read EEPROM
+  1509: 000F83   F059  breq EepromRead
+  1510: 000F84   3405  cpi tmp1, 'E'                   ; write EEPROM
+  1511: 000F85   F009  breq EEpromWrite
+  1512: 000F86   CF94  rjmp APPJUMP                    ; else start application
+  1513: 
+  1514: ;-----------------------------------------------------------------------
+  1515: ; EEPROM READ/WRITE ACCESS
+  1516: ;-----------------------------------------------------------------------
+  1517: 
+  1518: EepromWrite:
+  1519: EEWr0:
+  1520: 000F87   D01D  rcall GetNewPage                ; get EEPROM datablock
+  1521: 000F88   F096  brts EERWFx                     ; or abort on host's demand
+  1522: EEWr1:
+  1523: 000F89   D041  rcall YtoBUFFER                 ; Y = Buffer and Bcnt = blocksize
+  1524: EEWr2:
+  1525: 000F8A   9109  ld tmp1, y+                     ; read EEPROM byte from buffer
+  1526: 000F8B   D010  rcall EEWriteByte
+  1527: 000F8C   954A  dec bcnt                        ; count down block byte counter
+  1528: 000F8D   F7E1  brne EEWr2                      ; loop on if block not finished
+  1529: 000F8E   CFF8  rjmp EeWr0
+  1530: 
+  1531: ;-----------------------------------------------------------------------
+  1532: 
+  1533: EEpromRead:
+  1534: EeRe1:
+  1535: 000F8F   D01F  rcall RwaitConfirm              ; wait to confirm
+  1536: 000F90   F056  brts EERWFx                     ; else we are finished
+  1537: 000F91   E440  ldi bcnt, low(PAGESIZE*2)       ; again PAGESIZE*2 is blocksize
+  1538: EERe2:
+  1539: 000F92   BDE1  out EEARL, zl                   ; current EEPROM address low
+  1540:         .ifdef  EEARH
+  1541: 000F93   BDF2  out EEARH, zh                   ; current EEPROM address high
+  1542:         .endif
+  1543: 000F94   9AF8  sbi EECR, 0                     ; set EERE - EEPROM read enable
+  1544: 000F95   B500  in tmp1, EEDR                   ; read byte from current address
+  1545: 000F96   D047  rcall Transmitbyte              ; send out to RS232
+  1546: 000F97   9631  adiw zl,1                       ; count up EEPROM address
+  1547: 000F98   954A  dec bcnt                        ; count down block byte counter
+  1548: 000F99   F7C1  brne EERe2                      ; loop on if block not finished
+  1549: 000F9A   CFF4  rjmp EERe1
+  1550: EERWFx:
+  1551: 000F9B   9508  ret
+  1552: 
+  1553: ;-----------------------------------------------------------------------
+  1554: 
+  1555: EEWriteByte:
+  1556: 000F9C   BD00  out EEDR, tmp1                  ; write to EEPROM data register
+  1557: 000F9D   BDE1  out EEARL, zl                   ; current EEPROM address low
+  1558:         .ifdef  EEARH
+  1559: 000F9E   BDF2  out EEARH, zh                   ; high EEARH for some attinys
+  1560:         .endif
+  1561: 000F9F   9AFA  sbi EECR, 2                     ; EEPROM master prog enable
+  1562: 000FA0   9AF9  sbi EECR, 1                     ; EEPE initiate prog cycle
+  1563: EeWB:
+  1564: 000FA1   99F9  sbic EECR, 1                    ; wait write cycle to complete
+  1565: 000FA2   CFFE  rjmp EeWB                       ; before we can go on
+  1566: 000FA3   9631  adiw zl,1                       ; count up EEPROM address
+  1567: 000FA4   9508  ret
+  1568: 
+  1569: ;-----------------------------------------------------------------------
+  1570: ; GET NEW PAGE
+  1571: ;-----------------------------------------------------------------------
+  1572: 
+  1573: GetNewPage:
+  1574: 000FA5   D007  rcall RequestConfirm            ; check for Confirm
+  1575: 000FA6   F02E  brts GNPx                       ; abort if not confirmed
+  1576: GNP0:
+  1577: 000FA7   D023  rcall YtoBUFFER                 ; Y = BUFFER, bcnt = PAGESIZE*2
+  1578: GNP1:
+  1579: 000FA8   D029  rcall ReceiveByte               ; receive serial byte
+  1580: 000FA9   9309  st y+, tmp1                     ; and store in buffer
+  1581: 000FAA   954A  dec bcnt                        ; until full page loaded
+  1582: 000FAB   F7E1  brne GNP1                       ; loop on
+  1583: GNPx:
+  1584: 000FAC   9508  ret                             ; finished
+  1585: ;-----------------------------------------------------------------------
+  1586: ; REQUEST TO CONFIRM / AWAIT CONFIRM COMMAND
+  1587: ;-----------------------------------------------------------------------
+  1588: 
+  1589: RequestConfirm:
+  1590: 000FAD   E30F  ldi tmp1, REQUEST               ; send request character
+  1591: 000FAE   D02F  rcall Transmitbyte              ; prompt to confirm (or not)
+  1592: 
+  1593: RwaitConfirm:
+  1594: 000FAF   D022  rcall ReceiveByte               ; get host's reply
+  1595: 000FB0   94E8  clt                             ; set T=0 for confirmation
+  1596: 000FB1   3201  cpi tmp1, CONFIRM               ; if host HAS sent CONFIRM
+  1597: 000FB2   F009  breq RCx                        ; return with the T=0
+  1598: 000FB3   9468  set                             ; else set T=1 (NOT CONFIRMED)
+  1599: RCx:
+  1600: 000FB4   9508  ret                             ; whether confirmed or not
+  1601: 
+  1602: ;-----------------------------------------------------------------------
+  1603: ; FLASH ERASE TOP-TO-BOTTOM ( (BOOTSTART-1) ... $0000)
+  1604: ;-----------------------------------------------------------------------
+  1605: 
+  1606: EraseAppFlash:
+  1607: 000FB5   D019  rcall ZtoLASTPAGE               ; point Z to LASTPAGE, directly
+  1608: EAF0:
+  1609: 000FB6   54E0  subi zl, low (PAGESIZE*2)
+  1610: 000FB7   40F0  sbci zh, high(PAGESIZE*2)
+  1611: 000FB8   D008  rcall EraseFlashPage
+  1612: 000FB9   F7E1  brne EAF0                       ; until first page reached
+  1613: 000FBA   9508  ret                             ; and leave with Z = $0000
+  1614: 
+  1615: ;-----------------------------------------------------------------------
+  1616: ; EMERGENCY ERASE OF FLASH / EEPROM / USERDATA
+  1617: ;-----------------------------------------------------------------------
+  1618: 
+  1619: EmergencyErase:
+  1620: 000FBB   DFF9  rcall EraseAppFlash             ; erase Application Flash
+  1621: 000FBC   EF0F  ser tmp1                        ; byte value for EEPROM writes
+  1622: EEE0:
+  1623: 000FBD   DFDE  rcall EEWriteByte               ; write EEPROM byte, Z = Z + 1
+  1624: 000FBE   30F4  cpi zh, high(EEPROMEND+1)+2     ; EEPROMEND
+  1625: 000FBF   F7E9  brne EEE0                       ; and loop on until finished
+  1626: 
+  1627: 000FC0   D00E  rcall ZtoLASTPAGE               ; LASTPAGE is to be erased
+  1628: ;        rcall EraseFlashPage
+  1629: 
+  1630: ;-----------------------------------------------------------------------
+  1631: ; ERASE ONE FLASH PAGE
+  1632: ;-----------------------------------------------------------------------
+  1633: 
+  1634: EraseFlashPage:
+  1635: 000FC1   E003  ldi tmp1, 0b00000011            ; enable PGERS + SPMEN
+  1636: 000FC2   BF07  out SPMCSR, tmp1                ; in SPMCSR and erase current
+  1637: 000FC3   95E8  spm                             ; page by SPM (MCU halted)
+  1638: 
+  1639: ; Waiting for SPM to be finished is *obligatory* on ATmegas!
+  1640: SPMwait:
+  1641: 000FC4   B707  in tmp1, SPMCSR
+  1642: 000FC5   FD00  sbrc tmp1, 0                    ; wait previous SPMEN
+  1643: 000FC6   CFFD  rjmp SPMwait
+  1644: 000FC7   E101  ldi tmp1, 0b00010001            ; set RWWSRE and SPMEN
+  1645: 000FC8   BF07  out SPMCSR, tmp1
+  1646: 000FC9   95E8  spm
+  1647: 000FCA   9508  ret
+  1648: 
+  1649: ;-----------------------------------------------------------------------
+  1650: ; OTHER SUBROUTINES
+  1651: ;-----------------------------------------------------------------------
+  1652: 
+  1653: YtoBUFFER:
+  1654: 000FCB   E0C0  ldi yl, low (BUFFER)            ; reset pointer
+  1655: 000FCC   E0D1  ldi yh, high(BUFFER)            ; to programming buffer
+  1656: 000FCD   E440  ldi bcnt, low(PAGESIZE*2)       ; and often needed
+  1657: 000FCE   9508  ret
+  1658: 
+  1659: ;-----------------------------------------------------------------------
+  1660: 
+  1661: ZtoLASTPAGE:
+  1662: 000FCF   ECE0  ldi zl, low (LASTPAGE*2)        ; reset Z to LASTPAGE start
+  1663: 000FD0   E1FD  ldi zh, high(LASTPAGE*2)
+  1664: 000FD1   9508  ret
+  1665: 
+  1666: ;-----------------------------------------------------------------------
+  1667: ; RS232 RECEIVE BYTE
+  1668: ;-----------------------------------------------------------------------
+  1669: 
+  1670: ReceiveByte:
+  1671:         ;sbi RXPORT, RXBIT              ; again set pullup for RX -- seems un necessary
+  1672: 										; this is set up at the beginning and the TX routine
+  1673: 										; always returns to INPUT PULL UP specifically for cases
+  1674: 										; where the pin is shared in One wire mode.
+  1675: Recb1:
+  1676: 000FD2   994A  sbic RXPIN, RXBIT               ; wait for startbit (0)
+  1677: 000FD3   CFFE  rjmp Recb1                      ; loop while stop state (1)
+  1678: Recb2:
+  1679: 000FD4   E018  ldi tmp2, 8                     ; bitcounter
+  1680: 000FD5   D01E  rcall Waithalfbitcell           ; tune to center of startbit
+  1681: Recb3:
+  1682: 000FD6   D018  rcall Waitbitcell               ; tune to center of bitcell
+  1683: 000FD7   9506  lsr tmp1                        ; right shift 0 into bit 7
+  1684: 000FD8   994A  sbic RXPIN, RXBIT               ; if RXD bit is 1
+  1685: 000FD9   6800  sbr tmp1, 0b10000000            ; set bit 7
+  1686: Recb4:
+  1687: 000FDA   951A  dec tmp2                        ; count down bitcounter
+  1688: 000FDB   F7D1  brne Recb3                      ; loop until 8 bits collected
+  1689: 
+  1690: ; bugfix for starting TX too early
+  1691: ; original code, did an rjmp to Waitbitcell only which essentially returned
+  1692: ; when we were at the middle of the stop bit (because we previously advanced
+  1693: ; to the middle of the bit)
+  1694: ; if next we'll be sending a character, the Start bit we'll be too
+  1695: ; early because we haven't waited for the rest of the stop bit.
+  1696: ; so we need to advance Half a bit to the end of the last data bit
+  1697: ; AND THEN wait a full bit cell to complete the stop bit
+  1698: 
+  1699: ; This bugfix MAY not be necessary; TX waits a full bit cycle before starting
+  1700: ; transmission; maybe we were off timing with the stop bit due to the problem
+  1701: ; that 0s and 1s did not have the same transmission time and thus could 
+  1702: ; cause the overall byte length to vary.
+  1703: 
+  1704: ;rcall Waithalfbitcell           ; advance to the edge of the data bit
+  1705: 
+  1706: 000FDC   C012  rjmp Waitbitcell                ; move to wait for stop bit
+  1707: 
+  1708: ;-----------------------------------------------------------------------
+  1709: ; RS232 SEND CONFIRM CHARACTER
+  1710: ;-----------------------------------------------------------------------
+  1711: 
+  1712: SendConfirm:
+  1713: 000FDD   E201  ldi tmp1, CONFIRM
+  1714:         ;rjmp Transmitbyte
+  1715: 
+  1716: ;-----------------------------------------------------------------------
+  1717: ; RS232 TRANSMIT BYTE
+  1718: ;-----------------------------------------------------------------------
+  1719: 
+  1720: TransmitByte:
+  1721: 000FDE   D010  rcall Waitbitcell               ; ensure safe RX-TX transition
+  1722: 										; this seems to compensate if we come from RX, because RX
+  1723: 										; leaves at the middle of the stop bit; adding a bitcell
+  1724: 										; would put the stop bit in correct timing but it DOES NOT
+  1725: 										; in the logic analyser we see the start bit too early; 
+  1726: 										; so we have added extra timing at the end of the RX.
+  1727: 										
+  1728: ;;;;;;;;;;;;;; change Pedro
+  1729: 000FDF   9A22  sbi TXDDR, TXBIT                ; Set TX OUTPUT for active drive (no rely on pull up)										
+  1730: 										
+  1731: 000FE0   D00D  rcall Trx0                      ; transmit 0 = startbit
+  1732: 000FE1   E018  ldi tmp2, 8                     ; set bitcounter
+  1733: Trxbit:                                 ; transmit byte loop
+  1734: 000FE2   FD00  sbrc tmp1, 0
+  1735: 000FE3   D008  rcall Trx1                      ; sent logical 1 bitcell
+  1736: 000FE4   FF00  sbrs tmp1, 0                    ; or
+  1737: 000FE5   D008  rcall Trx0                      ; sent logical 0 bitcell
+  1738: 000FE6   9506  lsr tmp1                        ; shift out that bit
+  1739: 000FE7   951A  dec tmp2                        ; count down
+  1740: 000FE8   F7C9  brne Trxbit                     ; loop until all bits sent
+  1741: 
+  1742: ;;;;;;; Rewrite:		
+  1743: 		; send stop bit and tidy up the port state
+  1744: 000FE9   D002  rcall Trx1						; actively send oout stop bit
+  1745: 000FEA   9822  cbi TXDDR, TXBIT                ; change to input
+  1746: 										; because we just sent a 1, TXPORT is set to 1 and
+  1747: 										; therefore it is INPUT_HIGH; this is the desired behaviour
+  1748: 										; if we are on One Wire (RX is pulling up) and it's harmless
+  1749: 										; if we are on Full Duplex
+  1750: 000FEB   9508  ret								; change this to a fallthrough if we need code space 
+  1751: 
+  1752: 
+  1753: Trx1:
+  1754: 000FEC   9A2A  sbi TXPORT, TXBIT               ; portbit actively driven HIGH
+  1755: 000FED   C001  rjmp Waitbitcell				; 
+  1756: 
+  1757: Trx0:
+  1758: 000FEE   982A  cbi TXPORT, TXBIT               ; set portbit to active "0"
+  1759:         ;rjmp Waitbitcell               ; fallthrough bc we already spent extra time/instructions above determining
+  1760: 										; it was not a 1
+  1761: 		
+  1762: 
+  1763: ;-----------------------------------------------------------------------
+  1764: ; RS232 PRECISION TIMING
+  1765: ;-----------------------------------------------------------------------
+  1766: 
+  1767: Waitbitcell:
+  1768: 000FEF   01D3  movw xl, bclkl                  ; load bitcell clock timer
+  1769: wbc1:
+  1770: 000FF0   9758  sbiw xl, 24                     ; the original callibration cycle counted the time for 24x0s
+  1771: 000FF1   0000  nop                             ; so we subtract in pieces of 24 at a time, and this way get the time of 1bit.
+  1772: 000FF2   F7E8  brcc wbc1                       ; the nop is likely to fine tune the timing as the callibration cycle had quite a lot more instructions
+  1773: 000FF3   9508  ret
+  1774: 
+  1775: Waithalfbitcell:
+  1776: 000FF4   01D3  movw xl, bclkl                  ; load bitcell clock timer
+  1777: 000FF5   95B6  lsr xh                          ; shiftout bit 0 of xh to carry
+  1778: 000FF6   95A7  ror xl                          ; carry shifted in bit 7 of xl
+  1779: 000FF7   CFF8  rjmp wbc1                       ; run timer with 1/2 divider
+  1780: 
+  1781: ;-----------------------------------------------------------------------
+  1782: ; DEVICE INFO BLOCK = PERMANENT DATA
+  1783: ;-----------------------------------------------------------------------
+  1784: 
+  1785: DEVICEINFO:
+  1786: .message "DEVICE INFO BLOCK FOR ATMEGA"
+ -> Message: DEVICE INFO BLOCK FOR ATMEGA
+   File: main.asm, Line: 1786
+  1787: .db "TSB", low (BUILDDATE), high (BUILDDATE), BUILDSTATE
+        000FF8 5354 2B42 F124
+  1788: .db SIGNATURE_000, SIGNATURE_001, SIGNATURE_002, low (PAGESIZE)
+        000FFB 931E 200F
+  1789: .dw BOOTSTART-PAGESIZE
+        000FFD 0EE0
+  1790: .dw EEPROMEND
+        000FFE 01FF
+  1791: .db $AA, $AA
+        000FFF AAAA
+  1792: 
+  1793: .message "ASSEMBLY OF TSB FOR ATMEGA SUCCESSFULLY FINISHED!"
+ -> Message: ASSEMBLY OF TSB FOR ATMEGA SUCCESSFULLY FINISHED!
+   File: main.asm, Line: 1793
+  1794: 
+  1795: .endif               ; closing TSB for ATmega sourcecode;
+  1796: 
+  1797: ;***********************************************************************
+  1798: ; END OF TSB FOR ATMEGAS
+  1799: ;***********************************************************************
+  1800: 
+  1801: .exit
+ -> Warning 001: 20 symbol(s) defined, but not used!
+
+Program             :      248 words.
+Constants           :        8 words.
+Total program memory:      256 words.
+Eeprom space        :        0 bytes.
+Data segment        :        0 bytes.
+Compilation completed, no errors.
+Compilation endet 11.01.2018, 05:03:27

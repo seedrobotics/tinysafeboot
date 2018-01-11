@@ -1,0 +1,105 @@
+<ASSEMBLER_INFO>
+ <VERSION>2.2.6</VERSION>
+ <DEVICE>"ATmega88PA"</DEVICE>
+ <WORKING_DIR>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\Debug</WORKING_DIR>
+ <INCLUDE_PATH>
+  <DIR>C:/Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.2.132\avrasm\inc</DIR>
+  <DIR>C:\Program Files (x86)\Atmel\Studio\7.0\toolchain\avr8\avrassembler\Include</DIR>
+  <DIR></DIR>
+ </INCLUDE_PATH>
+ <SOURCE_FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</SOURCE_FILE>
+ <INCLUDED_FILES>
+  <FILE>C:/Program Files (x86)\Atmel\Studio\7.0\Packs\atmel\ATmega_DFP\1.2.132\avrasm\inc\m88padef.inc</FILE>
+ </INCLUDED_FILES>
+ <OBJECT_FILES>
+  <FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\Debug\tsb_tinymega.obj</FILE>
+ </OBJECT_FILES>
+ <HEX_FILES>
+  <FILE>tsb_tinymega.hex</FILE>
+ </HEX_FILES>
+ <OUTPUT_FILES>
+  <FILE>tsb_tinymega.map</FILE>
+  <FILE>tsb_tinymega.lss</FILE>
+ </OUTPUT_FILES>
+ <LABELS>
+  <RESET><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1237</LINE></RESET>
+  <APPJUMP><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1295</LINE></APPJUMP>
+  <WaitRX><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1255</LINE></WaitRX>
+  <WRX0To><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1262</LINE></WRX0To>
+  <WRXSTo><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1268</LINE></WRXSTo>
+  <ZtoLASTPAGE><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1661</LINE></ZtoLASTPAGE>
+  <WRX1To><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1274</LINE></WRX1To>
+  <Activate><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1310</LINE></Activate>
+  <SPMwait><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1640</LINE></SPMwait>
+  <actw1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1322</LINE></actw1>
+  <actw2><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1325</LINE></actw2>
+  <actwx><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1331</LINE></actwx>
+  <CheckPassword><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1338</LINE></CheckPassword>
+  <chpw0><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1339</LINE></chpw0>
+  <chpw1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1340</LINE></chpw1>
+  <chpwx><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1366</LINE></chpwx>
+  <chpw2><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1344</LINE></chpw2>
+  <Receivebyte><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1670</LINE></Receivebyte>
+  <chpwee><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1351</LINE></chpwee>
+  <RequestConfirm><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1589</LINE></RequestConfirm>
+  <chpa><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1364</LINE></chpa>
+  <EmergencyErase><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1619</LINE></EmergencyErase>
+  <Mainloop><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1383</LINE></Mainloop>
+  <SendDeviceInfo><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1373</LINE></SendDeviceInfo>
+  <DEVICEINFO><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1785</LINE></DEVICEINFO>
+  <SendFromFlash><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1418</LINE></SendFromFlash>
+  <SendConfirm><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1712</LINE></SendConfirm>
+  <CheckCommands><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1499</LINE></CheckCommands>
+  <ChangeSettings><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1395</LINE></ChangeSettings>
+  <GetNewPage><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1573</LINE></GetNewPage>
+  <ChangeS0><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1399</LINE></ChangeS0>
+  <EraseFlashPage><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1634</LINE></EraseFlashPage>
+  <WritePage><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1468</LINE></WritePage>
+  <ControlSettings><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1408</LINE></ControlSettings>
+  <SendPageFromFlash><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1416</LINE></SendPageFromFlash>
+  <Transmitbyte><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1720</LINE></Transmitbyte>
+  <ReadAppFlash><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1431</LINE></ReadAppFlash>
+  <RAF0><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1432</LINE></RAF0>
+  <RwaitConfirm><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1593</LINE></RwaitConfirm>
+  <RAFx><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1441</LINE></RAFx>
+  <RAF1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1436</LINE></RAF1>
+  <WriteAppFlash><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1449</LINE></WriteAppFlash>
+  <EraseAppFlash><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1606</LINE></EraseAppFlash>
+  <Flash2><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1451</LINE></Flash2>
+  <FlashX><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1461</LINE></FlashX>
+  <Flash3><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1454</LINE></Flash3>
+  <Flash4><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1456</LINE></Flash4>
+  <YtoBUFFER><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1653</LINE></YtoBUFFER>
+  <WrPa1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1470</LINE></WrPa1>
+  <WrPa2><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1483</LINE></WrPa2>
+  <WrPa3><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1487</LINE></WrPa3>
+  <EepromRead><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1533</LINE></EepromRead>
+  <EEpromWrite><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1518</LINE></EEpromWrite>
+  <EEWr0><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1519</LINE></EEWr0>
+  <EERWFx><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1550</LINE></EERWFx>
+  <EEWr1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1522</LINE></EEWr1>
+  <EEWr2><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1524</LINE></EEWr2>
+  <EEWriteByte><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1555</LINE></EEWriteByte>
+  <EeRe1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1534</LINE></EeRe1>
+  <EERe2><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1538</LINE></EERe2>
+  <EeWB><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1563</LINE></EeWB>
+  <GNPx><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1583</LINE></GNPx>
+  <GNP0><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1576</LINE></GNP0>
+  <GNP1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1578</LINE></GNP1>
+  <RCx><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1599</LINE></RCx>
+  <EAF0><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1608</LINE></EAF0>
+  <EAFx><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1613</LINE></EAFx>
+  <EEE0><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1622</LINE></EEE0>
+  <Recb1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1675</LINE></Recb1>
+  <Recb2><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1678</LINE></Recb2>
+  <Waithalfbitcell><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1775</LINE></Waithalfbitcell>
+  <Recb3><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1681</LINE></Recb3>
+  <Waitbitcell><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1767</LINE></Waitbitcell>
+  <Recb4><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1686</LINE></Recb4>
+  <Trx0><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1757</LINE></Trx0>
+  <Trxbit><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1733</LINE></Trxbit>
+  <Trx1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1753</LINE></Trx1>
+  <wbc1><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1769</LINE></wbc1>
+  <wbcx><FILE>C:\Seed Robotics GIT\tinysafeboot_Github\firmware_ASM\latest_stable_release\20170626\main.asm</FILE><LINE>1773</LINE></wbcx>
+ </LABELS>
+</ASSEMBLER_INFO>

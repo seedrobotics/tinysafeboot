@@ -68,7 +68,7 @@
 ;.include "m644def.inc"
 ;.include "tn167def.inc"
 ;.include "tn25def.inc"
-.include "m88PAdef.inc"
+;.include "m88PAdef.inc"
 ;
 ; [...]
 ;
@@ -103,8 +103,8 @@
 .equ    RXPIN   = PIND
 .equ    RXDDR   = DDRD
 .equ    RXBIT   = 2
-.equ    TXPORT  = PORTB
-.equ    TXDDR   = DDRB
+.equ    TXPORT  = PORTD
+.equ    TXDDR   = DDRD
 .equ    TXBIT   = 2
 ;
 ; Testing

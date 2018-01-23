@@ -1,11 +1,13 @@
 This folder contains compiled versions of the TSBAdvanced Loader tool.
 
-TSBLoader is a PC software to interact with the bootloader on the slave device to flash, manage eeprom, etc.
+TSBLoader is a PC software to interact with the TSB bootloader on the slave device to manage flash, manage eeprom, bootloader configuration and emergency erase.
 
-This tool is compiled with open source Mono .Net compiler meaning the binaries are cross platform for Windows, Linux and MacOS, provided Mono is installed on your system (in case iti is Linux os MacOS)
+Use tsbloader_adv.exe -? for usage options and instructions.
+
+This tool is compiled with the open source Mono .Net compiler meaning the <b>same binaries are compatible cross platform for Windows, Linux and MacOS, provided Mono is installed</b> on your system (in case it is Linux or MacOS; if you are on Windows either have Mono or .Net installed (.Net is probably already installed in Windows))
 
 Refer to Mono project page (http://www.mono-project.com/) for information on installing Mono.
-MONO is REQUIRED if you wish to run the binaries under Linux and MacOS. There is no need to recompile any file if you have Mono installed.
+MONO is REQUIRED if you wish to run the binaries under Linux and MacOS. There is no need to recompile any file for your OS if you have Mono installed.
 
 
 FAQs:

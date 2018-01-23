@@ -98,13 +98,13 @@
 ;
 ; Important Note: B0/B1 are defaults for database templates
 ;
-.equ    RXPORT  = PORTB
-.equ    RXPIN   = PINB
-.equ    RXDDR   = DDRB
-.equ    RXBIT   = 0
-.equ    TXPORT  = PORTB
-.equ    TXDDR   = DDRB
-.equ    TXBIT   = 1
+.equ    RXPORT  = PORTD
+.equ    RXPIN   = PIND
+.equ    RXDDR   = DDRD
+.equ    RXBIT   = 2
+.equ    TXPORT  = PORTD
+.equ    TXDDR   = DDRD
+.equ    TXBIT   = 2
 ;
 ; Testing
 ;~ .equ    RXPORT  = PORTA

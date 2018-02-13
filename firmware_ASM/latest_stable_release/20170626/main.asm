@@ -7,6 +7,15 @@
 ;***********************************************************************
 ;
 ;-----------------------------------------------------------------------
+; Extended by Seed Robotics from 2017
+;-----------------------------------------------------------------------
+; Seed Robotics contributions are available from the Github
+; repository github.com/seedrobotics
+; The License and conditions remain as stated below, in the
+; original notice.
+;
+;
+;-----------------------------------------------------------------------
 ; Written in 2011-2015 by Julien Thomas
 ;
 ; This program is free software; you can redistribute it and/or

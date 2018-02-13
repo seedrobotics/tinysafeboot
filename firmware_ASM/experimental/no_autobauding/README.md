@@ -31,7 +31,7 @@ So, as you can see, this is not the typical bootloader activation where, when it
 
 Once the bootloader activates, it will stay active until it receives an invalid command or a command to exit.
 
-Once again, because the baud was wrongly determined, you can't communicate with it and thus you can send any exit command so it will stay activate until a power cycle occurs.
+Once again, because the baud was wrongly determined, you can't communicate with it and thus you can send any exit command so it will stay active until a power cycle occurs.
 
 In words, your device locks up in the bootloader.
 
@@ -72,8 +72,8 @@ This practice also enables connection of devices in a Daisy chain by not having 
 
 Another important aspect for one-wire is that we can only turn RX back on once the TXC flag is asserted and NOT when the UDRE flag asserts.
 
-* On UDRE assertion one typically loads a new character to be sent; however UDRE asserts while the UART shift register is still shifting out the last byte but it's ready to take in a new one, which allows maximum performance.
-* TXC asserts later, when the shift register completes shifting out the byte. We can only transition from disabling TX to enabling RX on TXC; if we do it on UDRE, RX will be enabled while bits are still being shifted out and thus if RX and TX are shorted for One wire operation, we'll "see" the tail of the last character being sent, received back in RX (as a whole strange character but looking at the bits in a logic analyzer you can see it's the tail).
+* On UDRE assertion one typically loads a new character to be sent; however UDRE asserts while the UART shift register is still shifting out the last byte but it's ready to take in a new one, which allows maximum performance. The processor can do this because the UDR is a double buffered register.
+* TXC asserts later, when the shift register completes shifting out the byte. We can only transition from disabling TX to enabling RX on TXC; if we do it on UDRE, RX will be enabled while bits are still being shifted out and thus, if RX and TX are shorted for One wire operation, we'll "see" the tail of the last character being sent, received back in RX (as a whole strange character but looking at the bits in a logic analyzer you can see it's the tail).
 
 Relying on TXC reduces performance but ensures correct operation in one-wire mode (where TX and RX are shorted) and ensures proper operation of daisy-chain connections.
 

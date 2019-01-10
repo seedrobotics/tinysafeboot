@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("Tinysafeboot Advanced Loader Tool")]
-[assembly: AssemblyDescription("Advanced tool for interacting with devices running the Tinysafeboot bootloader")]
+[assembly: AssemblyTitle("DynamixelCommandGenerator")]
+[assembly: AssemblyDescription("Generator of Dynamixel Commands to interact with Seed Robotics firmware and request a jump to bootloader address (soft bootloader activation)")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("Tinysafeboot Advanced Loader Tool")]
+[assembly: AssemblyCompany("Seed Robotics Ltd")]
+[assembly: AssemblyProduct("Dynamixel Command Generator")]
 [assembly: AssemblyCopyright("GPL V3")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
@@ -20,7 +20,7 @@ using System.Runtime.InteropServices;
 [assembly: ComVisible(false)]
 
 // The following GUID is for the ID of the typelib if this project is exposed to COM
-[assembly: Guid("8c0f46cc-660e-4380-8ca4-185d596ab2db")]
+[assembly: Guid("31e47999-b1a6-4ac9-ad41-b17ac84b6d1d")]
 
 // Version information for an assembly consists of the following four values:
 //
@@ -32,5 +32,5 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("0.1.0.2")]
-[assembly: AssemblyFileVersion("0.1.0.2")]
+[assembly: AssemblyVersion("1.0.0.1")]
+[assembly: AssemblyFileVersion("1.0.0.1")]

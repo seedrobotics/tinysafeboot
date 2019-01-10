@@ -28,6 +28,7 @@ namespace Tsbloader_adv
         private const byte RETURN_UNKOWN_OPTION_IN_CASE = 3;
         private const byte RETURN_SEEDEROS_COMMAND_FAILED = 4;
         private const byte RETURN_UNEXPECTED_ERROR = 5;
+        private const byte MINIMUM_TIMEOUT_SETTING = 24;
 
         static int Main(string[] args)
         {
@@ -71,7 +72,7 @@ namespace Tsbloader_adv
                      * This ensures we're at a clean state of the command parser when we send the bridge enable command */
                     serial_port.Write("\r\n");
                     wait_for_reply(serial_port, cmd_parser.replytimeout_ms);
-                    System.Threading.Thread.Sleep(500); /* wait another 500ms to fully receive all comms */
+                    //System.Threading.Thread.Sleep(500); /* wait another 500ms to fully receive all comms */
                     serial_port.ReadExisting(); /* read and discard */
 
                     /* now send the actual command */
@@ -158,10 +159,16 @@ namespace Tsbloader_adv
             }
 
             /* Emergency Erase Request
-             * Emergency Erase restoresbootloader acces sin case of lost password, by wiping
+             * Emergency Erase restoresbootloader access in case of lost password, by wiping
              * the full FLASH and EEPROM memory areas
              */
             if (cmd_parser.bootloader_operations.Contains( CommandLineParser.en_bootloader_operations.EMERGENCY_ERASE)) {
+
+                if (cmd_parser.activation_mode != CommandLineParser.en_bootloader_activation_mode.COLD_BOOT)
+                {
+                    Console.WriteLine("ERROR: Emergency Erase can only be done in Cold [boot] activation mode.");
+                    return RETURN_ERRORS_ENCOUNTERED;
+                }
                 
                 Console.WriteLine();
                 Console.WriteLine("WARNING: Emergency Erase deletes all Application Flash");
@@ -227,16 +234,45 @@ namespace Tsbloader_adv
 
             foreach (string pwd in cmd_parser.bootloader_passwords)
             {
+                TSBInterfacing tsb = new TSBInterfacing();
+                bool activation_result = false;
+
                 if (pwd.Length > 0)
                 {
-                    Console.WriteLine();
-                    Console.WriteLine("> Activating bootloader for device with password: {0}", pwd);
-                    Console.WriteLine();
-                }
-                else {
+                    if (cmd_parser.activation_mode == CommandLineParser.en_bootloader_activation_mode.COLD_BOOT)
+                    {
+                        Console.WriteLine();
+                        Console.WriteLine("> Activating bootloader for device with password: {0}", pwd);
+                        Console.WriteLine();
+                        activation_result = tsb.ActivateBootloaderFromColdStart(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd);
+                    }
+                    else
+                    {
+                        Console.WriteLine("ERROR: Bootloader passwords can only be specified when activating in 'cold' [boot] mode.");
+                        return RETURN_ERRORS_ENCOUNTERED;
+                    }
+                } 
+                else if (cmd_parser.activation_mode == CommandLineParser.en_bootloader_activation_mode.COLD_BOOT) {
                     Console.WriteLine();
                     Console.WriteLine("> Activating bootloader (no device password specified)");
                     Console.WriteLine();
+                    activation_result = tsb.ActivateBootloaderFromColdStart(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd);
+                }
+                else if (cmd_parser.activation_mode == CommandLineParser.en_bootloader_activation_mode.LIVE_VIA_DYNAMIXEL)
+                {
+                    if (cmd_parser.dynid < 0 || cmd_parser.dynid > 253)
+                    {
+                        Console.WriteLine("ERROR: 'live' bootloader activation mode was selected but the '-dynid' parameter was not given or is invalid. Please set a valid '-dynid' for 'live' activation mode.");
+                        return RETURN_ERRORS_ENCOUNTERED;
+                    }
+
+                    Console.WriteLine();
+                    Console.WriteLine("> Activating bootloader on 'live' device with Dynamixel ID {0}", cmd_parser.dynid);
+                    Console.WriteLine();
+
+                    // baud after activation should not be hard coded as we may need to speak at higher bauds if going through the EROS board.
+                    // timeout for bootloader activation must exceed the time set in the servo firmware.
+                    activation_result = tsb.ActivateBootloaderFromDynamixel(cmd_parser.port_name, cmd_parser.baudrate_bps, 9600, (byte) cmd_parser.dynid, 3500, 6000, TSBInterfacing.en_protocol_version.DYNAMIXEL_1);
                 }
 
 
@@ -244,9 +280,9 @@ namespace Tsbloader_adv
                     * control structures come from a clean slate, which makes sense, since we're
                     * starting a whole new session
                     */
-                TSBInterfacing tsb = new TSBInterfacing();
+                
 
-                if (tsb.ActivateBootloader(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd))
+                if (activation_result == true)
                 {
                     /* Bootloader is active. Print all bootloader information */
                     PrintDeviceInfo(tsb);
@@ -378,7 +414,7 @@ namespace Tsbloader_adv
                             case CommandLineParser.en_bootloader_operations.PASSWORD_CHANGE:
                                 /* ask the user for a password */
                                 Console.WriteLine();
-                                Console.Write("Please enter the new Password (max. {0} chars): ", TSBInterfacing.max_pwd_length);
+                                Console.WriteLine("Please enter the new Password (max. {0} chars): ", TSBInterfacing.max_pwd_length);
                                 string new_pwd = Console.ReadLine();
 
                                 if (string.IsNullOrEmpty(new_pwd))
@@ -415,25 +451,26 @@ namespace Tsbloader_adv
                                 while (true)
                                 {
                                     Console.WriteLine();
-                                    Console.Write("Please enter the new Timeout setting: ");
+                                    Console.WriteLine("Please enter the new Timeout setting: ");
                                     string new_timeout = Console.ReadLine();
 
                                     if (string.IsNullOrEmpty(new_timeout))
                                     {
-                                        Console.WriteLine("Invalid timeout specified. Timeout must be number between 8 and 255.");
+                                        Console.WriteLine("Invalid timeout specified. Timeout must be number between {0} and 255.", MINIMUM_TIMEOUT_SETTING);
                                     }
                                     else
                                     {
                                         if (!int.TryParse(new_timeout, out new_timeout_setting))
                                         {
-                                            Console.WriteLine("Invalid timeout specified. Timeout must be number between 8 and 255.");
+                                            Console.WriteLine("Invalid timeout specified. Timeout must be number between {0} and 255.", MINIMUM_TIMEOUT_SETTING);
                                         }
-                                        else if (new_timeout_setting < 8 || new_timeout_setting > 255)
+                                        else if (new_timeout_setting < MINIMUM_TIMEOUT_SETTING || new_timeout_setting > 255)
                                         {
-                                            Console.WriteLine("Invalid timeout specified. Timeout must be number between 8 and 255.");
+                                            Console.WriteLine("Invalid timeout value specified. Timeout must be number between {0} and 255.", MINIMUM_TIMEOUT_SETTING);
                                         }
                                         else
                                         {
+                                            Console.WriteLine("New Timeout will be set to: {0}", new_timeout_setting);
                                             break;
                                         }
                                     }

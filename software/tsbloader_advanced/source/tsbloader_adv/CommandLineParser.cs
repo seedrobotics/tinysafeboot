@@ -38,10 +38,16 @@ namespace Tsbloader_adv
         * -pwd=[comma separated list of bootloader passwords if addressing one or several password protected devices]
         * -XXX [performs an emergency erase. If XXX is specified, no -fop, -eop, -xop options are allowed]
         * -?, -h Displays help screen 
+        * -acmode=cold/live  -- bootloader activation mode. Cold is activation from reset; live is by
+        *                       activating the bootloader with the system running
+        * -dynid Dynamixel ID of the device to activate in live mode.
         */
 
          private const int default_prewait_ms = 300;
          private const int default_replytimeout_ms = 3000;
+
+        public enum en_bootloader_activation_mode
+        { COLD_BOOT, LIVE_VIA_DYNAMIXEL }
 
         public enum en_bootloader_operations
         {
@@ -55,12 +61,16 @@ namespace Tsbloader_adv
         public string port_name, flash_file_name, eeprom_file_name;
         public int baudrate_bps;
         public int prewait_ms, replytimeout_ms;
+        public int dynid;
+        public en_bootloader_activation_mode activation_mode;
         public bool tag_eepromfilename_withdatetimepwd;
         public bool tag_flashfilename_withdatetimepwd;
         public bool patch_daisychain_bug;
 
+
         private bool port_found_, baud_found_, prewait_found_, timeout_found_, ffile_found_, efile_found_, pwd_found_, xxx_found_, fop_found_,
-            eop_found_, xop_found_, tagefile_found_, tagffile_found_, seederos_found_, patch_daisychain_found_, display_device_info_found_;
+            eop_found_, xop_found_, tagefile_found_, tagffile_found_, seederos_found_, patch_daisychain_found_, display_device_info_found_,
+            acmode_found_, dynid_found_;
 
         public CommandLineParser()
         {
@@ -71,6 +81,9 @@ namespace Tsbloader_adv
             baudrate_bps = 9600;
             prewait_ms = default_prewait_ms;
             replytimeout_ms = default_replytimeout_ms;
+            activation_mode = en_bootloader_activation_mode.COLD_BOOT; // default is cold boot
+
+            dynid = -1;
         }
 
          public bool parse_command_line(String[] args)
@@ -166,7 +179,41 @@ namespace Tsbloader_adv
 
                              break;
 
-                         case "-prewait":
+                        case "-acmode":
+                            if (acmode_found_) { throw_error_duplicate_param(split[0]); return false; }
+                            split[1] = split[1].ToLower();
+
+                            if (split[1] == "cold")
+                            {
+                                activation_mode = en_bootloader_activation_mode.COLD_BOOT;
+                                acmode_found_ = true;
+                            }
+                            else if (split[1] == "live")
+                            {
+                                activation_mode = en_bootloader_activation_mode.LIVE_VIA_DYNAMIXEL;
+                                acmode_found_ = true;
+                            } else
+                            {
+                                throw_error(string.Format("Invalid argument '{0}' passed to '{1}'. Must be 'cold' or 'live'.", split[1], split[0]));
+                                return false;
+                            }
+                            break;
+
+                        case "-dynid":
+                            if (dynid_found_) { throw_error_duplicate_param(split[0]); return false; }
+                            if (!int.TryParse(split[1], out dynid))
+                            {
+                                throw_error(string.Format("Invalid argument '{0}' passed to '{1}'.", split[1], split[0]));
+                                return false;
+                            }
+                            else
+                            {
+                                /* if it success, the baud rate is already stored in baudrate_bps */
+                                dynid_found_ = true;
+                            }
+                            break;
+
+                        case "-prewait":
                              if (prewait_found_) { throw_error_duplicate_param(split[0]); return false; }
                              if (!int.TryParse(split[1], out prewait_ms))
                              {
@@ -283,12 +330,6 @@ namespace Tsbloader_adv
 
                              foreach(string pwd in pwd_split) {
 
-                                 if (pwd.Length == 0)
-                                 {
-                                     throw_error(string.Format("Empty password found. Specifying empty passwords is invalid.\nIf you wish to access a bootloader without password, ommit the '{0}' parameter.", split[0]));
-                                     return false;
-                                 }
-
                                  if (bootloader_passwords.Contains(pwd)) {
                                      throw_error(string.Format("Password '{0}' is specified at least twice. Please specify each password only once.", pwd));
                                      return false;
@@ -401,13 +442,16 @@ namespace Tsbloader_adv
 
             Console.WriteLine("\n-port=    [port name]");
             Console.WriteLine("-baud=    [baud rate bps. Default is 9600]");
+            Console.WriteLine("-acmode=  [bootloader activation mode: 'cold' (default), 'live']");
+            Console.WriteLine("          'live' is currently only supported on Seed Robotics devices");
             Console.WriteLine("-prewait= [millisecs to wait after opening the port and before sending");
             Console.WriteLine("          the activation char. Default is {0}]", default_prewait_ms);
             Console.WriteLine("-replytimeout=[millisecs to wait for reply after sending the");
             Console.WriteLine("              bootloader activation sequence. Default is {0}]", default_replytimeout_ms);
-            Console.WriteLine("-pwd=      [specify only if acessing password protected devices");
+            Console.WriteLine("-pwd=      [specify if acessing password protected devices, in 'cold' mode");
             Console.WriteLine("           specify the password (if only one device) or a list of");
             Console.WriteLine("           comma-separated passwords if acessing several devices.]");
+            Console.WriteLine("-dynid=    [specify if acessing a device in 'live' mode]");
             Console.WriteLine("-i         Displays device and bootloader information.");
             Console.WriteLine("-fop=      [flash operation(s) to perform. Multiple options can be specified.");
             Console.WriteLine("           e=erase, w=write, v=verify, r=read.");

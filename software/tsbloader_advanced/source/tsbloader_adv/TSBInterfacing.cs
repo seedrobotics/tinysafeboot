@@ -27,6 +27,8 @@ namespace Tsbloader_adv
         public enum en_processor_type { ATTINY=0, ATMEGA=1 };
         public enum en_appjump_mode { RELATIVE_JUMP = 0, ABSOLUTE_JUMP=1 };
 
+        public enum en_protocol_version { DYNAMIXEL_1=1, DYNAMIXEL_2=2 }
+
         public enum en_intelhex_validationresult
         {
             IHEX_VALID_LINE, IHEX_NO_START_CHAR, IHEX_INVALID_HEX_STRING, IHEX_INVALID_CHECKSUM,
@@ -65,6 +67,7 @@ namespace Tsbloader_adv
         const byte CONFIRM_CHAR = (byte)'!';
         const byte REQUEST_CHAR = (byte)'?';
         private const int command_reply_timeout_ms = 1000;
+        private const int dynamixel_command_timeout_ms = 5000;
         
         private bool bootloader_active_;
         private SerialPort serial_port_;
@@ -76,7 +79,7 @@ namespace Tsbloader_adv
         private const int large_buff_size_ = 1048576; /* 1048576 = 1 MB */
         private byte[] large_buff_; 
 
-        public TSBInterfacing() {
+        public TSBInterfacing(/*TextWriter tw_outstatusmsgs*/) {
             serial_port_ = new SerialPort();
 
             serial_port_.Parity = Parity.None;
@@ -89,7 +92,7 @@ namespace Tsbloader_adv
             large_buff_ = new byte[large_buff_size_]; 
         }
 
-        public bool ActivateBootloader(string port_name, int baud_bps, int pre_wait_ms, int reply_timeout_ms, string bootloader_pwd) {
+        public bool ActivateBootloaderFromColdStart(string port_name, int baud_bps, int pre_wait_ms, int reply_timeout_ms, string bootloader_pwd) {
             if (bootloader_active_ ) {
                 if ( bootloader_pwd == session_data_.password)
                 {
@@ -180,20 +183,178 @@ namespace Tsbloader_adv
                 }
             }
 
-            /* pull reply in */
+            return GetBootloaderActivationData();
+        }
+
+        public bool ActivateBootloaderFromDynamixel(string port_name, int baud_bps_beforeactivation, int baud_bps_afteractivation,  byte dynamixel_id, int device_jmp_delay_timeout_ms, int hostside_bootldr_reply_timeout_ms, en_protocol_version protocol_version)
+        {
+            if (bootloader_active_)
+            {
+               Console.WriteLine("Attempting to Activate Bootloader but another Bootloader session is already active.{0}End the previous sessio before starting a new one. (in code, use function DeactivateBootloader())", Environment.NewLine);
+               return false;
+            }
+
+            if (serial_port_.IsOpen)
+            {
+                serial_port_.Close();
+            }
+
+            serial_port_.BaudRate = baud_bps_beforeactivation; // likely BPS for Dynamixel communication
+            serial_port_.PortName = port_name;
+            serial_port_.Encoding = Encoding.ASCII;
+
+            Console.WriteLine("Preparing live bootloader activation");
+
+            try
+            {
+                serial_port_.Open();
+
+                /* Apparently on .Net/Mono we need to manually set the DTR enable flag,
+                 * which is commonly asserted whenever a device connects to a terminal.
+                 * The internal Reset of the Seed Eros boards is dependent on this behaviour
+                 * of DTR so, for the sake of honouring the "typical" behaviour
+                 * we will assert it on connect and de-assert it on disconnect
+                 */
+                serial_port_.DtrEnable = true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(string.Format("Error opening Serial port before activation '{0}':", serial_port_.PortName));
+                Console.WriteLine(ex.Message);
+                return false;
+            }
+
+            Thread.Sleep(500); // wait to pull any garbage that may be on the bus (for subseqent purging)
+            serial_port_.ReadExisting(); // purge lerftover garbage
+
+
+            /* INSERT CODE TO ACTIVATE BOOTLOADER FROM DYNAMIXEL 
+                1) Read FW version
+                2) Depending on version:
+                    a) read ctrl table location of bootloader version
+                    b) determine the value fro the JMP based on the bootloader version
+                    c) send BOOTLOADERJUMP instruction with the timeout, baud ragisters and jump vector
+
+                3) Close serial port
+                4) Open serial port at the speed set up in 2b  and wait for the reply         
+            */
+
+            DynamixelCommander.DynamixelCommandGenerator dyncommander;
+            if (protocol_version == en_protocol_version.DYNAMIXEL_2) {
+                dyncommander = new DynamixelCommander.DynamixelCommandGenerator(DynamixelCommander.DynamixelCommandGenerator.en_DynProtocol_Version.Dynamixel_2);
+            } else
+            {
+                dyncommander = new DynamixelCommander.DynamixelCommandGenerator(DynamixelCommander.DynamixelCommandGenerator.en_DynProtocol_Version.Dynamixel_1);
+            }
+
+            byte[] temp_array = new byte[255];
+
+            /* 1) read fw version */
+            byte[] dyn_cmd = dyncommander.generate_read_packet(dynamixel_id, 2, 1);
+            serial_port_.Write(dyn_cmd, 0, dyn_cmd.Length);
+
+            wait_for_reply(dynamixel_command_timeout_ms, 7);
+            if (serial_port_.BytesToRead < 7)
+            {
+                Console.WriteLine("Could not query the device firmware version (no reply from device). Querying ID {0} at {1:N0}bps", dynamixel_id, serial_port_.BaudRate);
+                return false;
+            }
+
+            serial_port_.Read(temp_array, 0, serial_port_.BytesToRead);
+            int fw_version = dyncommander.get_value_from_reply(temp_array);
+
+            if (fw_version < 26)
+            {
+                Console.WriteLine("The firmware version on the device does not support Live bootloader activation.{0}Please use the traditional ('cold') activation method.", Environment.NewLine);
+                return false;
+            }
+
+
+            /* 2a) Read bootloader version */
+            dyn_cmd = dyncommander.generate_read_packet(dynamixel_id, 117, 1);
+            serial_port_.Write(dyn_cmd, 0, dyn_cmd.Length);
+
+            wait_for_reply(dynamixel_command_timeout_ms, 7);
+            if (serial_port_.BytesToRead < 7)
+            {
+                Console.WriteLine("Could not determine the Bootloader version (no reply from device). Querying ID {0} at {1:N0}bps", dynamixel_id, serial_port_.BaudRate);
+                return false;
+            }
+
+            serial_port_.Read(temp_array, 0, serial_port_.BytesToRead);
+            int bootldr_version = dyncommander.get_value_from_reply(temp_array);
+
+            int jump_vector;
+            if (bootldr_version == 14)
+            {
+                jump_vector = 0xF3B;
+            } else if (bootldr_version == 16)
+            {
+                jump_vector = 0xF3D;
+            } else
+            {
+                Console.WriteLine("Could not determine the Bootloader version. Value read is Unknown: {0}", bootldr_version);
+                return false;
+            }
+
+            /* 2c) send bootloader activation instruction */
+            dyn_cmd = dyncommander.generate_jumpt_to_bootldr_packet(dynamixel_id, device_jmp_delay_timeout_ms, 0x48, 0xF, jump_vector);
+            serial_port_.Write(dyn_cmd, 0, dyn_cmd.Length);
+
+            /* Re-open serial port at the bps set after activation (likely bootloader bps) */
+            Console.WriteLine("...waiting for bootloader reply");
+
+            serial_port_.Close();
+            serial_port_.BaudRate = baud_bps_afteractivation;
+            try
+            {
+                serial_port_.Open();
+                serial_port_.DtrEnable = true;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(string.Format("Error opening Serial port after activation '{0}':", serial_port_.PortName));
+                Console.WriteLine(ex.Message);
+                return false;
+            }
+
+            /* wait for reply or timeout
+              timeout must be higher then the delay programmed in the servo itself 
+              check the servo firmware */
+            wait_for_reply(hostside_bootldr_reply_timeout_ms, bootloader_activation_messagesize);
+
+            if (serial_port_.BytesToRead == 0) /* if no reply */
+            {
+                Console.WriteLine(string.Format("Bootloader activation failed. No reply received from the bootloader.{0}Verify the bootloader JMP vector and baud rate matching against the set baud rate registers.", Environment.NewLine));
+                return false;
+            }
+
+            return GetBootloaderActivationData();
+
+        }
+
+        private bool GetBootloaderActivationData()
+        {
+            /* pull reply in; we already waited for the reply and tested there is one, in the cycle above */
             byte[] reply_buffer = new byte[256];
 
             serial_port_.Read(reply_buffer, 0, serial_port_.BytesToRead);
 
-            if (reply_buffer[16] != CONFIRM_CHAR) {
+            /* DEBUG Console.WriteLine();
+            Console.WriteLine(System.Text.Encoding.ASCII.GetString(reply_buffer));
+            Console.WriteLine(); */
+
+            if (reply_buffer[16] != CONFIRM_CHAR)
+            {
                 Console.WriteLine();
                 Console.WriteLine(string.Format("ERROR: Invalid reply from Bootloader. Confirmation character is invalid ('{0}')", reply_buffer[16]));
                 Console.WriteLine(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)));
                 return false;
             }
-            else if (System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3) != "TSB") {
+            else if (System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3) != "TSB")
+            {
                 Console.WriteLine();
-                Console.WriteLine(string.Format("ERROR: Invalid Reply Header ('{0}')", System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3) ));
+                Console.WriteLine(string.Format("ERROR: Invalid Reply Header ('{0}')", System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3)));
                 Console.WriteLine(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)));
                 return false;
             }
@@ -202,17 +363,17 @@ namespace Tsbloader_adv
                 //Console.WriteLine("Bootloader responded.");
             }
 
- 
+
             /* NOTE: While AVR/Assembler is accounting flash addresses space in WORDS
                 * (except from EEPROM locations), at PC side we are using BYTES 
                 */
-            session_data_.buildver = (int)reply_buffer[3] + (int) reply_buffer[4] * 256;
+            session_data_.buildver = (int)reply_buffer[3] + (int)reply_buffer[4] * 256;
             session_data_.status = reply_buffer[5];
             session_data_.device_signature = string.Format("{0:X2}{1:X2}{2:X2}", reply_buffer[6], reply_buffer[7], reply_buffer[8]);
             session_data_.pagesize = (int)reply_buffer[9] * 2; // WORDS * 2 = BYTES
-            session_data_.appflash = ((int) reply_buffer[10] + ((int)reply_buffer[11]) * 256) * 2; // WORDS * 2 = BYTES
+            session_data_.appflash = ((int)reply_buffer[10] + ((int)reply_buffer[11]) * 256) * 2; // WORDS * 2 = BYTES
             session_data_.flash_size = (session_data_.appflash / 1024 + 1) * 1024;
-            session_data_.eeprom_size = ((int) reply_buffer[12] + ((int)reply_buffer[13]) * 256) + 1;
+            session_data_.eeprom_size = ((int)reply_buffer[12] + ((int)reply_buffer[13]) * 256) + 1;
 
             if (dic_device_names_.ContainsKey(session_data_.device_signature))
             {
@@ -223,7 +384,8 @@ namespace Tsbloader_adv
                 session_data_.device_name = "Unknown";
             }
 
-            if (session_data_.pagesize % 16 > 0) {
+            if (session_data_.pagesize % 16 > 0)
+            {
                 /* invalid page size; something is wrong */
                 Console.WriteLine();
                 Console.WriteLine(string.Format("ERROR: Bootloader replied with an invalid pagesize ('{0}'). Pagesize is not multiple of 16.", session_data_.pagesize));
@@ -231,16 +393,19 @@ namespace Tsbloader_adv
             }
 
             /* check if it's the TSB firmware with new date identifier and status byte */
-            if (session_data_.buildver < 32768) {
-                session_data_.buildver = ( session_data_.buildver & 31 ) + ((session_data_.buildver & 480) / 32) * 100 + 
-                                            ((session_data_.buildver & 65024 ) / 512) * 10000 + 20000000;
+            if (session_data_.buildver < 32768)
+            {
+                session_data_.buildver = (session_data_.buildver & 31) + ((session_data_.buildver & 480) / 32) * 100 +
+                                            ((session_data_.buildver & 65024) / 512) * 10000 + 20000000;
 
-            } else { /* old date encoding in tsb-fw (three bytes) */
+            }
+            else { /* old date encoding in tsb-fw (three bytes) */
                 session_data_.buildver = session_data_.buildver + 65536 + 20000000;
             }
 
             /* detect device type and appjump mode */
-            switch(reply_buffer[15]) {
+            switch (reply_buffer[15])
+            {
                 case 0x00:
                     session_data_.jump_mode = en_appjump_mode.RELATIVE_JUMP;
                     session_data_.processor_type = en_processor_type.ATTINY;
@@ -257,7 +422,7 @@ namespace Tsbloader_adv
                     break;
 
                 default:
-                    Console.WriteLine(string.Format("ERROR: Unknown processor code received ('{0}'). Can't determine APPJump and processor type.",  reply_buffer[15]));
+                    Console.WriteLine(string.Format("ERROR: Unknown device type code received ('{0}'). Can't determine APPJump and device type.", reply_buffer[15]));
                     return false;
             }
 
@@ -268,7 +433,7 @@ namespace Tsbloader_adv
             {
                 DeactivateBootloader();
             }
-  
+
             return bootloader_active_;
         }
 
@@ -287,7 +452,6 @@ namespace Tsbloader_adv
         /******************************
          * LAST PAGE functions 
          *******************************/
-
         public bool LastPage_Read()
         {
             byte[] reply_buff = new byte[256];
@@ -298,20 +462,35 @@ namespace Tsbloader_adv
             /* repeat reading the last page AT LEAST 2 times. The second time, if the daisy chain patch
              * is applied, will be the correct one, with the right information.
              * this happens because, if we are on a daisy chain, the first read will be
-             * poluted by the other devices speaking on the bus */
+             * poluted and even wrong in terms of framing and byte count caused by the other devices speaking on the bus */
             byte b; bool tsb_replied = false;
             for (b = 0; b < 2; b++)
             {
                 serial_port_.Write("c");
 
-                /* pull page from device */
-                if (!read_page_from_device(ref reply_buff))
+                /* pull page from device; 
+                   only give up if we've already tried one time */
+                bool result = read_page_from_device(ref reply_buff);
+                if (result == false && b > 0)
                 {
+                    //DEBUG: Console.WriteLine(string.Format("Failing after {0} attempts", b));
                     return false;
+                } else
+                {
+                    //DEBUG: Console.Write(string.Format("Repeating LastPageRead. b is {0}, result is {1}//", b, result));
                 }
+                /*DEBUG Console.WriteLine();
+                Console.WriteLine(System.Text.Encoding.ASCII.GetString(reply_buff));
+                Console.WriteLine(); */
 
-                tsb_replied = return_to_tsbmainparser();
+                if (result == true) /* only mess with the menu if we know we got a proper reply */
+                {
+                    tsb_replied = return_to_tsbmainparser();
+                }
             }
+
+            //DEBUG: Console.Write(string.Format("TSB replied={0}//", tsb_replied));
+            
 
             /* get the data from the byte array */
             session_data_.appjump_address = (int)reply_buff[0] + ((int)reply_buff[1] * 256);
@@ -355,8 +534,7 @@ namespace Tsbloader_adv
             if (session_data_.password.Length >= max_pwd_length)
             {
                 Console.Write("ERROR");
-                Console.WriteLine("Password is too long. Maximum pasword length that can be accepted in this tool is {0}", max_pwd_length);
-                Console.WriteLine("If you need to set a longer password, try using the original TSB Loader written in FreeBasic");
+                Console.WriteLine("Password is too long. Maximum password length that can be set using this tool is {0} characters.", max_pwd_length);
                 return false;
             }
 
@@ -381,7 +559,7 @@ namespace Tsbloader_adv
 
                 /* Make the rest of the page zeros.
                  * In old versions, in a daisy chain, when a wrong password is given it goes to an infinite loop
-                 * but the loop can be broken by sending a 0 (code for exmegency erase) which then sends waits for the
+                 * but the loop can be broken by sending a 0 (code for exmegency erase) which then sends a REQUEST and waits for the
                  * Conformation char; if no confirmation, the other devices boot.
                  * We want to explore this by making a sequence of 3 zeros pass on the bus, thus forcing the bug to occur
                  * and making the other devices boot; hopefully they won't disturb comms again and we can operate normally
@@ -454,7 +632,7 @@ namespace Tsbloader_adv
             serial_port_.Write("e");
             bool result = false;
 
-            if (read_all_pages_to_largebuff(session_data_.eeprom_size, ref nr_bytes_returned) == true)
+            if (read_all_pages_to_largebuff("EEProm read... ", session_data_.eeprom_size, ref nr_bytes_returned) == true)
             {
                 Console.WriteLine();
                 Console.Write("EEProm read complete. Saving {0} bytes to file {1}... ", nr_bytes_returned, eep_filename);
@@ -495,7 +673,7 @@ namespace Tsbloader_adv
 
             serial_port_.Write("E");
 
-            if (!write_largebuffer_to_device(nr_bytes_infile))
+            if (!write_largebuffer_to_device("EEProm write... ", nr_bytes_infile))
             {
                 return false;
             }
@@ -537,7 +715,6 @@ namespace Tsbloader_adv
 
             serial_port_.Write("e");
 
-            int con_col = Console.CursorLeft, con_row = Console.CursorTop;
             do
             {
                 serial_port_.Write(((char)CONFIRM_CHAR).ToString()); /* confirm to pull page
@@ -554,8 +731,7 @@ namespace Tsbloader_adv
                 {
                     /* compare manually byte by byte */
                     for (byte b=0; b < session_data_.pagesize; b++) {
-                        Console.SetCursorPosition(con_col, con_row);
-                        Console.Write("0x{0:X} ({1}%)", curr_addr, (curr_addr * 100) / (nr_bytes_infile - 1));
+                        Console.Write("\rEEProm verify... 0x{0:X} ({1}%)", curr_addr, (curr_addr * 100) / (nr_bytes_infile - 1));
                         
                         if (large_buff_[curr_addr] != in_buff[b]) {
                             Console.WriteLine(" ERROR");
@@ -581,8 +757,7 @@ namespace Tsbloader_adv
             {
                 last_addr = (last_addr / session_data_.pagesize + 1) * session_data_.pagesize;
             }
-            Console.SetCursorPosition(con_col, con_row);
-            Console.WriteLine("0x{0:X} ({1}%)", last_addr, 100);
+            Console.WriteLine("\rEEProm verify... 0x{0:X} ({1}%)", last_addr, 100);
 
             Console.WriteLine("EEProm Verification sucessful. Verified all {0} bytes in file {1}", nr_bytes_infile, eep_filename);
 
@@ -604,7 +779,7 @@ namespace Tsbloader_adv
 
             serial_port_.Write("E");
 
-            if (!write_largebuffer_to_device(session_data_.eeprom_size))
+            if (!write_largebuffer_to_device("EEProm Erase... ", session_data_.eeprom_size))
             {
                 return false;
             }
@@ -635,7 +810,7 @@ namespace Tsbloader_adv
             serial_port_.Write("f");
             bool result = false;
 
-            if (read_all_pages_to_largebuff(session_data_.appflash, ref nr_bytes_returned) == true)
+            if (read_all_pages_to_largebuff("Flash read... ", session_data_.appflash, ref nr_bytes_returned) == true)
             {
                 Console.WriteLine();
                 Console.Write("Flash read complete. Processing read data...");
@@ -746,7 +921,7 @@ namespace Tsbloader_adv
 
             serial_port_.Write("F");
 
-            if (!write_largebuffer_to_device(nr_bytes_infile))
+            if (!write_largebuffer_to_device("Flash write... ", nr_bytes_infile))
             {
                 return false;
             }
@@ -788,7 +963,6 @@ namespace Tsbloader_adv
 
             serial_port_.Write("f");
 
-            int con_col = Console.CursorLeft, con_row = Console.CursorTop;
             do
             {
                 serial_port_.Write(((char)CONFIRM_CHAR).ToString()); /* confirm to pull page
@@ -817,8 +991,7 @@ namespace Tsbloader_adv
 
                     for (; b < session_data_.pagesize; b++)
                     {
-                        Console.SetCursorPosition(con_col, con_row);
-                        Console.Write("0x{0:X} ({1}%)", curr_addr, (curr_addr * 100) / (nr_bytes_infile - 1));
+                        Console.Write("\rFlash verify... 0x{0:X} ({1}%)", curr_addr, (curr_addr * 100) / (nr_bytes_infile - 1));
 
                         if (large_buff_[curr_addr] != in_buff[b])
                         {
@@ -845,8 +1018,7 @@ namespace Tsbloader_adv
             {
                 last_addr = (last_addr / session_data_.pagesize + 1) * session_data_.pagesize;
             }
-            Console.SetCursorPosition(con_col, con_row);
-            Console.WriteLine("0x{0:X} ({1}%)", last_addr, 100);
+            Console.WriteLine("\rFlash verify... 0x{0:X} ({1}%)", last_addr, 100);
 
             Console.WriteLine("Flash Verification sucessful. Verified all {0} bytes in file {1}", nr_bytes_infile, flash_filename);
 
@@ -1035,18 +1207,16 @@ namespace Tsbloader_adv
             serial_port_.Write(((char)CONFIRM_CHAR).ToString()); /* send the final confirmation */
 
             /* do some animation to show some progress */
-            int con_col = Console.CursorLeft, con_row = Console.CursorTop;
 
             string progress_signals = "|/-\\|/-\\|/-\\";
 
             for (byte b=0; b<=10; b++)
             {
-                Console.SetCursorPosition(con_col, con_row);
-                Console.Write("{0}", progress_signals.Substring(b, 1));
+                Console.Write("\rPerforming Emergency Erase... {0}", progress_signals.Substring(b, 1));
                 wait_for_reply(command_reply_timeout_ms, 1); /* wait for the CONFIRMATION char; to inform the Emergency Erase is done
                                                                 wait longer than usual as mutiple memories must be erased */
             }
-            Console.SetCursorPosition(con_col, con_row);
+            Console.Write("\rPerforming Emergency Erase... "); // reset cursor to position
 
             if (serial_port_.BytesToRead != 1)
             {
@@ -1097,6 +1267,9 @@ namespace Tsbloader_adv
             {
                 Console.WriteLine("ERROR");
                 Console.WriteLine("Received an incomplete page ({0} bytes)", serial_port_.BytesToRead);
+
+                /* pull whatever bytes there are so that they won't be disturbing/offseting further reads */
+                serial_port_.Read(buff, 0, serial_port_.BytesToRead);
                 return false;
             }
             else
@@ -1115,13 +1288,12 @@ namespace Tsbloader_adv
             }
         }
 
-        private bool read_all_pages_to_largebuff(int nr_bytes_to_read, ref int nr_bytes_returned)
+        private bool read_all_pages_to_largebuff(string s_progress_preffix_print, int nr_bytes_to_read, ref int nr_bytes_returned)
         {
             /* Reads all pages to the large_buff */
             byte[] in_buff = new byte[256];
             int large_buff_ix = 0;
 
-            int con_col = Console.CursorLeft, con_row = Console.CursorTop;
             do
             {
                 serial_port_.Write(((char)CONFIRM_CHAR).ToString()); /* confirm to pull page
@@ -1137,8 +1309,7 @@ namespace Tsbloader_adv
                     Array.Copy(in_buff, 0, large_buff_, large_buff_ix, session_data_.pagesize); // in_buff.CopyTo(large_buff_, large_buff_ix);
                     large_buff_ix += session_data_.pagesize;
 
-                    Console.SetCursorPosition(con_col, con_row);
-                    Console.Write("0x{0:X} ({1}%)", large_buff_ix - 1, (large_buff_ix * 100) / nr_bytes_to_read);
+                    Console.Write("\r{2} 0x{0:X} ({1}%)", large_buff_ix - 1, (large_buff_ix * 100) / nr_bytes_to_read, s_progress_preffix_print);
                 }
             } while (large_buff_ix < nr_bytes_to_read);
 
@@ -1183,13 +1354,12 @@ namespace Tsbloader_adv
             }
         }
 
-        private bool write_largebuffer_to_device(int nr_bytes_to_write) {
+        private bool write_largebuffer_to_device(string s_progress_preffix_print, int nr_bytes_to_write) {
 
             /* Writes all pages in the large_buff to the device */
             byte[] out_buff = new byte[256];
             int large_buff_ix = 0;
 
-            int con_col = Console.CursorLeft, con_row = Console.CursorTop;
             do
             {
                 /* pull page from large buffer to be written */
@@ -1203,8 +1373,7 @@ namespace Tsbloader_adv
                 {
                     large_buff_ix += session_data_.pagesize;
 
-                    Console.SetCursorPosition(con_col, con_row);
-                    Console.Write("0x{0:X} ({1}%)", large_buff_ix, (large_buff_ix * 100) / nr_bytes_to_write);
+                    Console.Write("\r{2} 0x{0:X} ({1}%)", large_buff_ix, (large_buff_ix * 100) / nr_bytes_to_write, s_progress_preffix_print);
                 }
             } while (large_buff_ix < nr_bytes_to_write);
 
@@ -1227,6 +1396,8 @@ namespace Tsbloader_adv
 
                 /* Let's see if we already have the CONFIRM meaning we're back at the main parser */
                 wait_for_reply(command_reply_timeout_ms, 1);
+
+                //DEBUG:Console.WriteLine(string.Format("Bytes to read: {0}", serial_port_.BytesToRead));
 
                 if (serial_port_.BytesToRead >= 1)
                 {

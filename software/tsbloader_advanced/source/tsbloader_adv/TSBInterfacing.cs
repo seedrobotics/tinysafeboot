@@ -35,6 +35,11 @@ namespace Tsbloader_adv
             IHEX_INCOMPLETE_LINE, IHEX_LINE_TOO_LONG
         };
 
+        public enum en_cb_status_update_lineending
+        {
+            CBSU_NEWLINE, CBSU_HOLD_LINE, CBSU_CARRIAGE_RETURN_TO_BOL, CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE
+        };
+
         public struct str_tsb_session_data {
             public int buildver;
             public byte status;
@@ -47,6 +52,7 @@ namespace Tsbloader_adv
             public int appjump_address;
             public byte timeout;
             public string password;
+            public byte[] magic_bytes; // allow 2 magic bytes
             public en_processor_type processor_type;
             public en_appjump_mode jump_mode;
             public bool daisychain_patch_in_lastpage;
@@ -77,9 +83,15 @@ namespace Tsbloader_adv
         public str_tsb_session_data session_data_;         /* session specific data */
 
         private const int large_buff_size_ = 1048576; /* 1048576 = 1 MB */
-        private byte[] large_buff_; 
+        private byte[] large_buff_;
 
-        public TSBInterfacing(/*TextWriter tw_outstatusmsgs*/) {
+        public delegate void StatusUpdate_Delegate(string msg, int progess_percent, bool msg_contains_error, en_cb_status_update_lineending line_ending_behaviour);
+        public delegate string RequestDataFromUser_Delegate(string msg);
+
+        private StatusUpdate_Delegate cb_StatusUpdate ;
+        private RequestDataFromUser_Delegate cb_RequestDataFromUser;
+
+        public TSBInterfacing(StatusUpdate_Delegate CallBackFunction_StatusUpdate, RequestDataFromUser_Delegate RequestDataFromUser_Function) {
             serial_port_ = new SerialPort();
 
             serial_port_.Parity = Parity.None;
@@ -89,7 +101,12 @@ namespace Tsbloader_adv
             dic_device_names_ = new Dictionary<string,string>();
             fill_devicenames(ref dic_device_names_);
 
-            large_buff_ = new byte[large_buff_size_]; 
+            large_buff_ = new byte[large_buff_size_];
+
+            session_data_.magic_bytes = new byte[2];
+
+            cb_StatusUpdate = CallBackFunction_StatusUpdate;
+            cb_RequestDataFromUser = RequestDataFromUser_Function;
         }
 
         public bool ActivateBootloaderFromColdStart(string port_name, int baud_bps, int pre_wait_ms, int reply_timeout_ms, string bootloader_pwd) {
@@ -100,7 +117,7 @@ namespace Tsbloader_adv
                 }
                 else
                 {
-                    Console.WriteLine("Attempting to Activate Bootloader but another Bootloader session is already active.{0}End the previous sessio before starting a new one. (in code, use function DeactivateBootloader())", Environment.NewLine);
+                    cb_StatusUpdate(string.Format("Attempting to Activate Bootloader but another Bootloader session is already active.{0}End the previous session before starting a new one. (in code, use function DeactivateBootloader())", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
             }
@@ -113,22 +130,50 @@ namespace Tsbloader_adv
             serial_port_.PortName = port_name;
             serial_port_.Encoding = Encoding.ASCII;
 
+
+            /* Determine OS
+             * Depending on the OS we need to handle the DTR line (for auto reset)
+             * differently
+             * Mono: seems to require explicit handling of DTR
+             * Windows 10: manupulating DTR after opening has timing issues and occurs
+             * at random time; setting it before opening and then opening seems to
+             * cause the desired behaviour immediately
+             */
+
+            bool is_windows = false;
+            int p = (int)Environment.OSVersion.Platform;
+            is_windows =( (p == 4) || (p == 6) || (p == 128));
+
             try
             {
+                // WINDOWS: move DTR Enable setting, so that it's done before the OPEN
+                // to try and see if its behaviour is more consistent
+                if (is_windows) { serial_port_.DtrEnable = true; }
+
                 serial_port_.Open();
 
                 /* Apparently on .Net/Mono we need to manually set the DTR enable flag,
                  * which is commonly asserted whenever a device connects to a terminal.
-                 * The internal Reset of the Seed Eros boards is dependent on this behaviour
-                 * of DTR so, for the sake of honouring the "typical" behaviour
-                 * we will assert it on connect and de-assert it on disconnect
-                 */
-                serial_port_.DtrEnable = true;
+                 * We wish to maintain assertion of DTR on connect in order to support
+                 * Arduino-style autoreset of boards.
+                 *
+                 * On .Net under windows 10, we have had situaitons where explicitly
+                 * calling Enable/Disable would actually result in DTR being asserted out of time
+                 * (maybe USB cahcing issues?)
+                 * Therefore, we moved this to be set before the call to OPEN to see if it resolves the issue */
+
+                if (!is_windows) {
+                    serial_port_.DtrEnable = false;
+
+                    // give it a few MS for the OS driver to execute the request
+                    Thread.Sleep(100);
+
+                    serial_port_.DtrEnable = true;
+                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine(string.Format("Error opening Serial port '{0}':", serial_port_.PortName));
-                Console.WriteLine(ex.Message);
+                cb_StatusUpdate(string.Format("Error opening Serial port '{0}':{1}{2}", serial_port_.PortName, Environment.NewLine, ex.Message), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -139,41 +184,57 @@ namespace Tsbloader_adv
              */
             if (serial_port_.BytesToRead > 0)
             {
-                Console.WriteLine("< " + serial_port_.ReadExisting().ToString().Replace("\n","\n< "));
-                Console.WriteLine();
+                cb_StatusUpdate(string.Format("< {0}{1}", serial_port_.ReadExisting().ToString().Replace("\n","\n< "), Environment.NewLine), -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             }
 
 
             /* Send bootloader activation chars
-             */
-            serial_port_.Write(string.Format("@@@{0}", bootloader_pwd));
 
+               // Modified behaviour 11/Feb/19:
+                  Even if we get an activation password, we will first send the activation chars
+                  without password and wait for a reply
+                  If not reply, then we send the password;
+                  If there is a reply, we issue a Warning and DO NOT send the password
+                  This is to PREVENT situations where we try to activate with a password that begins with 
+                  a char such as "e" which corresponds to a valid bootloader command.
+                  If the bootloader does not have a password it will immediately execute the "e" command
+                  as opposed to using it as a password check.
+
+             */
+            serial_port_.Write("@@@");
+
+            bool bootloader_pwd_sent = false;
             while (true) {
                 /* wait for reply or timeout */
                 wait_for_reply(reply_timeout_ms, bootloader_activation_messagesize);
 
                 if (serial_port_.BytesToRead == 0) /* if no reply */
                 {
-                    if (bootloader_pwd.Length > 0) /* check if we used a pwd already */
+                    if ( bootloader_pwd.Length > 0) /* check if we a pwd to try already */
                     {
-                        Console.WriteLine(string.Format("No reply received from the bootloader.{0}Check if the password is correct, if the device has power and if it has been reset before initiating this command (some may boards auto reset the device).", Environment.NewLine));
-                        return false;
+                        if (!bootloader_pwd_sent)
+                        {
+                            serial_port_.Write(bootloader_pwd);
+                            bootloader_pwd_sent = true;
+                        }
+                        else
+                        {
+                            cb_StatusUpdate(string.Format("No reply received from the bootloader.{0}Check if the password is correct, if the device has power and if it has been reset before initiating this command (some may boards auto reset the device).", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                            return false;
+                        }
 
                     } else {
                         /* attempt asking for a password */
-                        Console.WriteLine("No reply from bootloader. Would you like to enter a bootloader password?");
-                        Console.WriteLine("(press Ctrl+C to cancel or enter password and press enter)");
-                        Console.Write("Password: ");
-                        bootloader_pwd = Console.ReadLine();
+                        bootloader_pwd = cb_RequestDataFromUser(string.Format("No reply from bootloader. Bootloader may be password protected.{0}Please enter the bootloader password: ", Environment.NewLine));
 
                         if (bootloader_pwd.Length == 0) {
-                            Console.WriteLine();
-                            Console.WriteLine("No password entered. Ending program.");
+                            cb_StatusUpdate("No password entered. Ending program.", -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                             return false;
                         }
 
                         /* send the password and wait for reply again */
-                        serial_port_.Write(bootloader_pwd);
+                        serial_port_.Write(bootloader_pwd); 
+                        bootloader_pwd_sent = true;
 
                         /* the While Cycle will run again */
                     }
@@ -183,6 +244,11 @@ namespace Tsbloader_adv
                 }
             }
 
+            if (bootloader_pwd.Length > 0 && !bootloader_pwd_sent)
+            {
+                cb_StatusUpdate(string.Format("WARNING: A Bootloader Password was given but the bootloader is accessible WITHOUT password.{0}Therefore, no password was used to activate the bootloader.", Environment.NewLine), -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            }
+
             return GetBootloaderActivationData();
         }
 
@@ -190,7 +256,7 @@ namespace Tsbloader_adv
         {
             if (bootloader_active_)
             {
-               Console.WriteLine("Attempting to Activate Bootloader but another Bootloader session is already active.{0}End the previous sessio before starting a new one. (in code, use function DeactivateBootloader())", Environment.NewLine);
+               cb_StatusUpdate(string.Format("Attempting to Activate Bootloader but another Bootloader session is already active.{0}End the previous sessio before starting a new one. (in code, use function DeactivateBootloader())", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                return false;
             }
 
@@ -203,24 +269,17 @@ namespace Tsbloader_adv
             serial_port_.PortName = port_name;
             serial_port_.Encoding = Encoding.ASCII;
 
-            Console.WriteLine("Preparing live bootloader activation");
+            cb_StatusUpdate("Preparing live bootloader activation", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
 
             try
             {
                 serial_port_.Open();
 
-                /* Apparently on .Net/Mono we need to manually set the DTR enable flag,
-                 * which is commonly asserted whenever a device connects to a terminal.
-                 * The internal Reset of the Seed Eros boards is dependent on this behaviour
-                 * of DTR so, for the sake of honouring the "typical" behaviour
-                 * we will assert it on connect and de-assert it on disconnect
-                 */
-                serial_port_.DtrEnable = true;
+                // no DTR line flipping here as this is a live activation
             }
             catch (Exception ex)
             {
-                Console.WriteLine(string.Format("Error opening Serial port before activation '{0}':", serial_port_.PortName));
-                Console.WriteLine(ex.Message);
+                cb_StatusUpdate(string.Format("Error opening Serial port before activation '{0}':{1}{2}", serial_port_.PortName, Environment.NewLine, ex.Message), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -256,7 +315,7 @@ namespace Tsbloader_adv
             wait_for_reply(dynamixel_command_timeout_ms, 7);
             if (serial_port_.BytesToRead < 7)
             {
-                Console.WriteLine("Could not query the device firmware version (no reply from device). Querying ID {0} at {1:N0}bps", dynamixel_id, serial_port_.BaudRate);
+                cb_StatusUpdate(string.Format("Could not query the device firmware version (no reply from device). Querying ID {0} at {1:N0}bps", dynamixel_id, serial_port_.BaudRate),-1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -265,7 +324,7 @@ namespace Tsbloader_adv
 
             if (fw_version < 26)
             {
-                Console.WriteLine("The firmware version on the device does not support Live bootloader activation.{0}Please use the traditional ('cold') activation method.", Environment.NewLine);
+                cb_StatusUpdate(string.Format("The firmware version on the device does not support Live bootloader activation.{0}Please use the traditional ('cold') activation method.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -277,7 +336,7 @@ namespace Tsbloader_adv
             wait_for_reply(dynamixel_command_timeout_ms, 7);
             if (serial_port_.BytesToRead < 7)
             {
-                Console.WriteLine("Could not determine the Bootloader version (no reply from device). Querying ID {0} at {1:N0}bps", dynamixel_id, serial_port_.BaudRate);
+                cb_StatusUpdate(string.Format("Could not determine the Bootloader version (no reply from device). Querying ID {0} at {1:N0}bps", dynamixel_id, serial_port_.BaudRate), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -293,7 +352,7 @@ namespace Tsbloader_adv
                 jump_vector = 0xF3D;
             } else
             {
-                Console.WriteLine("Could not determine the Bootloader version. Value read is Unknown: {0}", bootldr_version);
+                cb_StatusUpdate(string.Format("Could not determine the Bootloader version. Value read is Unknown: {0}", bootldr_version), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -302,7 +361,7 @@ namespace Tsbloader_adv
             serial_port_.Write(dyn_cmd, 0, dyn_cmd.Length);
 
             /* Re-open serial port at the bps set after activation (likely bootloader bps) */
-            Console.WriteLine("...waiting for bootloader reply");
+            cb_StatusUpdate("...waiting for bootloader reply", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
 
             serial_port_.Close();
             serial_port_.BaudRate = baud_bps_afteractivation;
@@ -313,8 +372,7 @@ namespace Tsbloader_adv
             }
             catch (Exception ex)
             {
-                Console.WriteLine(string.Format("Error opening Serial port after activation '{0}':", serial_port_.PortName));
-                Console.WriteLine(ex.Message);
+                cb_StatusUpdate(string.Format("Error opening Serial port after activation '{0}':{1}{2}", serial_port_.PortName, Environment.NewLine, ex.Message),0,true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -325,7 +383,7 @@ namespace Tsbloader_adv
 
             if (serial_port_.BytesToRead == 0) /* if no reply */
             {
-                Console.WriteLine(string.Format("Bootloader activation failed. No reply received from the bootloader.{0}Verify the bootloader JMP vector and baud rate matching against the set baud rate registers.", Environment.NewLine));
+                cb_StatusUpdate(string.Format("Live Bootloader activation failed. No reply received from the bootloader.{0}Verify the bootloader JMP vector and baud rate matching against the set baud rate registers.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -340,27 +398,25 @@ namespace Tsbloader_adv
 
             serial_port_.Read(reply_buffer, 0, serial_port_.BytesToRead);
 
-            /* DEBUG Console.WriteLine();
-            Console.WriteLine(System.Text.Encoding.ASCII.GetString(reply_buffer));
-            Console.WriteLine(); */
+            /* DEBUG cb_StatusUpdate();
+            cb_StatusUpdate(System.Text.Encoding.ASCII.GetString(reply_buffer));
+            cb_StatusUpdate(); */
 
             if (reply_buffer[16] != CONFIRM_CHAR)
             {
-                Console.WriteLine();
-                Console.WriteLine(string.Format("ERROR: Invalid reply from Bootloader. Confirmation character is invalid ('{0}')", reply_buffer[16]));
-                Console.WriteLine(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)));
+                cb_StatusUpdate(string.Format("{1}ERROR: Invalid reply from Bootloader. Confirmation character is invalid ('{0}')", reply_buffer[16], Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
             else if (System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3) != "TSB")
             {
-                Console.WriteLine();
-                Console.WriteLine(string.Format("ERROR: Invalid Reply Header ('{0}')", System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3)));
-                Console.WriteLine(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)));
+                cb_StatusUpdate(string.Format("{1}ERROR: Invalid Reply Header ('{0}')", System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3),Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
             else
             {
-                //Console.WriteLine("Bootloader responded.");
+                //cb_StatusUpdate("Bootloader responded.");
             }
 
 
@@ -387,8 +443,7 @@ namespace Tsbloader_adv
             if (session_data_.pagesize % 16 > 0)
             {
                 /* invalid page size; something is wrong */
-                Console.WriteLine();
-                Console.WriteLine(string.Format("ERROR: Bootloader replied with an invalid pagesize ('{0}'). Pagesize is not multiple of 16.", session_data_.pagesize));
+                cb_StatusUpdate(string.Format("ERROR: Bootloader replied with an invalid pagesize ('{0}'). Pagesize is not multiple of 16.", session_data_.pagesize), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -422,7 +477,7 @@ namespace Tsbloader_adv
                     break;
 
                 default:
-                    Console.WriteLine(string.Format("ERROR: Unknown device type code received ('{0}'). Can't determine APPJump and device type.", reply_buffer[15]));
+                    cb_StatusUpdate(string.Format("ERROR: Unknown device type code received ('{0}'). Can't determine APPJump and device type.", reply_buffer[15]), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
             }
 
@@ -456,10 +511,11 @@ namespace Tsbloader_adv
         {
             byte[] reply_buff = new byte[256];
 
-            Console.Write("Reading boootloader configuration data...");
+            cb_StatusUpdate("Reading boootloader configuration data... ", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
-            /* repeat reading the last page AT LEAST 2 times. The second time, if the daisy chain patch
+            /* BUGFIX for bootloaders that have the Daisy chain/password escape bug:
+             * repeat reading the last page AT LEAST 2 times. The second time, if the daisy chain patch
              * is applied, will be the correct one, with the right information.
              * this happens because, if we are on a daisy chain, the first read will be
              * poluted and even wrong in terms of framing and byte count caused by the other devices speaking on the bus */
@@ -473,15 +529,12 @@ namespace Tsbloader_adv
                 bool result = read_page_from_device(ref reply_buff);
                 if (result == false && b > 0)
                 {
-                    //DEBUG: Console.WriteLine(string.Format("Failing after {0} attempts", b));
+                    //DEBUG: cb_StatusUpdate(string.Format("Failing after {0} attempts", b));
                     return false;
                 } else
                 {
                     //DEBUG: Console.Write(string.Format("Repeating LastPageRead. b is {0}, result is {1}//", b, result));
                 }
-                /*DEBUG Console.WriteLine();
-                Console.WriteLine(System.Text.Encoding.ASCII.GetString(reply_buff));
-                Console.WriteLine(); */
 
                 if (result == true) /* only mess with the menu if we know we got a proper reply */
                 {
@@ -511,6 +564,19 @@ namespace Tsbloader_adv
                 }
             }
 
+            // get the magic bytes. They're stored after the termination character for password
+            // we do it this way bc different devices have different page sizes
+            // if we were to store at the end of the page, we'd need to know the pagesize of the
+            // device before hand;
+            // this way we read from the bottom (index 0) and find them after the password end character
+            session_data_.magic_bytes[0] = reply_buff[++b];
+            session_data_.magic_bytes[1] = reply_buff[++b];
+
+            // Bugfix for bootloaders with the Daisy chain/password escape bug
+            // set the remaining empty space to 0
+            // if any bootloader escapes the password check, they are fed several 0s
+            // which will force them to boot the main code;
+            // not ideal but the best work around encountered
             session_data_.daisychain_patch_in_lastpage = true;
             for (++b; b <= session_data_.pagesize; b++)
             {
@@ -520,7 +586,7 @@ namespace Tsbloader_adv
                 }
             }
 
-            Console.WriteLine("Done");
+            cb_StatusUpdate("Done", 100, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             return tsb_replied;
         }
 
@@ -528,13 +594,12 @@ namespace Tsbloader_adv
         {
             byte[] page_buff = new byte[256];
 
-            Console.Write("Writing bootloader configuration data...");
+            cb_StatusUpdate("Writing bootloader configuration data...", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
             if (session_data_.password.Length >= max_pwd_length)
             {
-                Console.Write("ERROR");
-                Console.WriteLine("Password is too long. Maximum password length that can be set using this tool is {0} characters.", max_pwd_length);
+                cb_StatusUpdate(string.Format("ERROR{0}Password is too long. Maximum password length that can be set using this tool is {1} characters.", Environment.NewLine, max_pwd_length), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -549,13 +614,18 @@ namespace Tsbloader_adv
 
             byte next_wr_ix = (byte) (pwd_array.Length + 3);
 
-            if (next_wr_ix >= session_data_.pagesize - 7)
+            const int reserve_bytes_after_pwd = 10;
+            if (next_wr_ix >= session_data_.pagesize - reserve_bytes_after_pwd)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("Password is too long for the pagesize in this device. Maximum password length in this device is {0} characters, due to the device pagesize.", session_data_.pagesize - 7);
+                cb_StatusUpdate(string.Format("ERROR{0}Password is too long for the pagesize in this device. Maximum password length in this device is {1} characters, due to the device pagesize.", session_data_.pagesize - reserve_bytes_after_pwd, Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             } else {
                 page_buff[next_wr_ix++] = 0xFF; /* password termination character */
+
+                /* save magic bytes */
+                page_buff[next_wr_ix++] = session_data_.magic_bytes[0];
+                page_buff[next_wr_ix++] = session_data_.magic_bytes[1];
+
 
                 /* Make the rest of the page zeros.
                  * In old versions, in a daisy chain, when a wrong password is given it goes to an infinite loop
@@ -572,41 +642,30 @@ namespace Tsbloader_adv
 
             /* for Last page write, the device replies by re sending the page that was just sent */
 
-            /* in Daisy chain operation, if it's the first time we're writing the last page with the
-             * patch, the other devices might interfere in the communication before quitting,
-             * so we may have to write the LastPage twice to overcome this 
-             */
+            
             byte[] reply_buff = new byte[256];
-            for (byte b = 0; b < 2; b++)
+            /**** Start the write procedure **/
+            serial_port_.Write("C");
+
+            if (!write_page_to_device(ref page_buff))
             {
-                /**** Start the write procedure **/
-                serial_port_.Write("C");
-
-                if (!write_page_to_device(ref page_buff))
-                {
-                    return false;
-                }
-                                
-                if (read_page_from_device(ref reply_buff) == false && b > 0)
-                {
-                    return false;
-                }
-                
-                /* compare the data received */
-                if (page_buff.SequenceEqual(reply_buff))
-                {
-                    break;
-
-                } else if (b > 0) {
-                    Console.Write("ERROR");
-                    Console.Write("Verification of written data failed.");
-                    return false;
-                }
-
-                return_to_tsbmainparser(); /* go back to main parser before repeating the loop */
+                return false;
             }
 
-            Console.WriteLine("Done");
+            /* verify the write */
+            // Read last paga
+            if (read_page_from_device(ref reply_buff) == false)
+            {
+                return false;
+            }                
+            // compare the data received */
+            if (page_buff.SequenceEqual(reply_buff) == false)
+            {
+                cb_StatusUpdate(string.Format("ERROR{0}Verification of written data failed.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                return false;
+            }
+
+            cb_StatusUpdate("Done", 100, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             return return_to_tsbmainparser();
         }
 
@@ -617,14 +676,13 @@ namespace Tsbloader_adv
 
         public bool EEProm_Read(string eep_filename)
         {
-            Console.WriteLine();
-            Console.Write("EEProm read... ");
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            cb_StatusUpdate("EEProm read... ", 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
             if (string.IsNullOrEmpty(eep_filename))
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("No valid filename specified. Please specify the filename to save the EEPROM data.");
+                cb_StatusUpdate(string.Format("ERROR{0}No valid filename specified. Please specify the filename to save the EEPROM data.", Environment.NewLine),-1,true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -634,8 +692,8 @@ namespace Tsbloader_adv
 
             if (read_all_pages_to_largebuff("EEProm read... ", session_data_.eeprom_size, ref nr_bytes_returned) == true)
             {
-                Console.WriteLine();
-                Console.Write("EEProm read complete. Saving {0} bytes to file {1}... ", nr_bytes_returned, eep_filename);
+                //cb_StatusUpdate();
+                cb_StatusUpdate(string.Format("EEProm read complete. Saving {0} bytes to file {1}... ", nr_bytes_returned, eep_filename), -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
 
                 result = write_largebuffer_to_file(eep_filename, nr_bytes_returned);
 
@@ -648,14 +706,14 @@ namespace Tsbloader_adv
 
         public bool EEProm_Write(string eep_filename)
         {
-            Console.WriteLine();
-            Console.Write("EEProm write... ");
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            cb_StatusUpdate(string.Format("EEProm write... "), 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
+
             if (!bootloader_active()) return false;
 
             if (string.IsNullOrEmpty(eep_filename))
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("No valid filename specified. Please specify the filename to load the EEPROM data.");
+                cb_StatusUpdate(string.Format("ERROR{0}No valid filename specified. Please specify the filename to load the EEPROM data.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE); 
                 return false;
             }
 
@@ -666,8 +724,7 @@ namespace Tsbloader_adv
             }
             else if (nr_bytes_infile > session_data_.eeprom_size)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("File is larger than EEPROM size. (file size={0}, eeprom size={1})", nr_bytes_infile, session_data_.eeprom_size);
+                cb_StatusUpdate(string.Format("ERROR{0}File is larger than EEPROM size. (file size ={ 1}, eeprom size = { 2 })", Environment.NewLine, nr_bytes_infile, session_data_.eeprom_size), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE); 
                 return false;
             }
 
@@ -678,22 +735,20 @@ namespace Tsbloader_adv
                 return false;
             }
 
-            Console.WriteLine("");
-            Console.WriteLine("EEPROM write complete.");
+            //cb_StatusUpdate("EEPROM write complete.");
             return return_to_tsbmainparser();
         }
 
 
         public bool EEProm_Verify(string eep_filename)
         {
-            Console.WriteLine();
-            Console.Write("EEProm verify... ");
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            cb_StatusUpdate("EEProm verify... ", 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
             if (string.IsNullOrEmpty(eep_filename))
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("No valid filename specified. Please specify the filename to load the EEPROM data.");
+                cb_StatusUpdate(string.Format("ERROR{0}No valid filename specified. Please specify the filename to load the EEPROM data.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -704,8 +759,7 @@ namespace Tsbloader_adv
             }
             else if (nr_bytes_infile > session_data_.eeprom_size)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("File is larger than EEPROM size. (file size={0}, eeprom size={1})", nr_bytes_infile, session_data_.eeprom_size);
+                cb_StatusUpdate(string.Format("ERROR{0}File is larger than EEPROM size. (file size ={1}, eeprom size = {2})", Environment.NewLine, nr_bytes_infile, session_data_.eeprom_size), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -723,19 +777,28 @@ namespace Tsbloader_adv
                                                                       */
                 if (read_page_from_device(ref in_buff) == false)
                 {
-                    Console.WriteLine("ERROR");
-                    Console.WriteLine("Error while trying to read a page from the device. Starting address 0x{0}", curr_addr);
+                    cb_StatusUpdate(string.Format("ERROR{0}Error while trying to read a page from the device. Starting address 0x{1}", Environment.NewLine, curr_addr), -1,true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
                 else
                 {
                     /* compare manually byte by byte */
+
+                    List<int> percent_displayed = new List<int>();
+                    int current_percent;
                     for (byte b=0; b < session_data_.pagesize; b++) {
-                        Console.Write("\rEEProm verify... 0x{0:X} ({1}%)", curr_addr, (curr_addr * 100) / (nr_bytes_infile - 1));
+
+                        /* to reduce system calls, and too much output data when output is redirected
+                          only update status every 2 % */
+                        current_percent = (curr_addr * 100) / (nr_bytes_infile - 1);
+                        if ( (current_percent % 2  == 0) && !percent_displayed.Contains(current_percent))
+                        {
+                            cb_StatusUpdate(string.Format("EEProm verify... 0x{0:X}", curr_addr), (curr_addr * 100) / (nr_bytes_infile - 1), false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL);
+                            percent_displayed.Add(current_percent);
+                        }
                         
                         if (large_buff_[curr_addr] != in_buff[b]) {
-                            Console.WriteLine(" ERROR");
-                            Console.WriteLine("Verification error at position 0x{0:X}", curr_addr);
+                            cb_StatusUpdate(string.Format("ERROR{0}Verification error at position 0x{1:X}", Environment.NewLine, curr_addr), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                             return false;
                         }
 
@@ -757,9 +820,9 @@ namespace Tsbloader_adv
             {
                 last_addr = (last_addr / session_data_.pagesize + 1) * session_data_.pagesize;
             }
-            Console.WriteLine("\rEEProm verify... 0x{0:X} ({1}%)", last_addr, 100);
+            cb_StatusUpdate(string.Format("EEProm verify... 0x{0:X}", curr_addr), 100, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE);
 
-            Console.WriteLine("EEProm Verification sucessful. Verified all {0} bytes in file {1}", nr_bytes_infile, eep_filename);
+            cb_StatusUpdate(string.Format("EEProm verification sucessful. Verified all {0} bytes in file {1}", nr_bytes_infile, eep_filename), -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
 
             return return_to_tsbmainparser();
         }
@@ -770,8 +833,8 @@ namespace Tsbloader_adv
              * 0xFFs
              */
 
-            Console.WriteLine();
-            Console.Write("EEProm Erase... ");
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            cb_StatusUpdate("EEProm Erase... ", 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
             byte[] out_buff = Enumerable.Repeat((byte)0xFF, session_data_.eeprom_size).ToArray();
@@ -784,8 +847,7 @@ namespace Tsbloader_adv
                 return false;
             }
 
-            Console.WriteLine("");
-            Console.WriteLine("EEPROM Erase complete.");
+            cb_StatusUpdate("EEPROM Erase complete.", 100,false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE);
             return return_to_tsbmainparser();
         }
 
@@ -795,14 +857,13 @@ namespace Tsbloader_adv
 
         public bool Flash_Read(string flash_filename)
         {
-            Console.WriteLine();
-            Console.Write("Flash read... ");
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            cb_StatusUpdate("Flash read... ", 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
             if (string.IsNullOrEmpty(flash_filename))
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("No valid filename specified. Please specify the filename to save the Flash data.");
+                cb_StatusUpdate(string.Format("ERROR{0}No valid filename specified. Please specify the filename to save the Flash data.", Environment.NewLine), -1,true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -812,8 +873,7 @@ namespace Tsbloader_adv
 
             if (read_all_pages_to_largebuff("Flash read... ", session_data_.appflash, ref nr_bytes_returned) == true)
             {
-                Console.WriteLine();
-                Console.Write("Flash read complete. Processing read data...");
+                cb_StatusUpdate("Flash read complete. Processing read data... ", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
 
                 /* remove empty/erased pages */
                 int curr_ix = nr_bytes_returned - 1;
@@ -852,8 +912,8 @@ namespace Tsbloader_adv
                         }                        
                     }
 
-                    Console.WriteLine("Done");
-                    Console.Write("Saving {0} bytes to file {1}... ", nr_bytes_returned, flash_filename);
+                    cb_StatusUpdate("Done", 100, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                    cb_StatusUpdate(string.Format("Saving {0} bytes to file {1}... ", nr_bytes_returned, flash_filename), -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
 
                     result = write_largebuffer_to_file(flash_filename, nr_bytes_returned);
                     result = result & return_to_tsbmainparser();
@@ -861,8 +921,8 @@ namespace Tsbloader_adv
                 }
                 else
                 {
-                    Console.WriteLine("Done");
-                    Console.Write("Flash is empty. Nothing to save to file.");
+                    cb_StatusUpdate("Done", 0, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                    cb_StatusUpdate("Flash is empty. Nothing to save to file.", 0, false, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return return_to_tsbmainparser();
                 }
   
@@ -875,14 +935,13 @@ namespace Tsbloader_adv
 
         public bool Flash_Write(string flash_filename)
         {
-            Console.WriteLine();
-            Console.Write("Flash write... ");
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            cb_StatusUpdate("Flash write... ", 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
             if (string.IsNullOrEmpty(flash_filename))
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("No valid filename specified. Please specify the filename to load the Flash data.");
+                cb_StatusUpdate(string.Format("ERROR{0}No valid filename specified. Please specify the filename to load the Flash data.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -893,23 +952,21 @@ namespace Tsbloader_adv
             }
             else if (nr_bytes_infile > session_data_.appflash)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("File is larger than Flash size. (file size={0}, flash size={1})", nr_bytes_infile, session_data_.appflash);
+
+                cb_StatusUpdate(string.Format("ERROR{0}File is larger than Flash size. (file size={1}, flash size={2})", Environment.NewLine, nr_bytes_infile, session_data_.appflash), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
             if (SPM_instructions_present_in_largebuffer(nr_bytes_infile) && 
                 session_data_.processor_type == en_processor_type.ATTINY)
             {
-                Console.WriteLine("WARNING: The firmware you are about to upload");
-                Console.WriteLine("contains the SPM opcode that performs direct flash writes.");
-                Console.WriteLine("If used incorrectly they may overwrite and damage the bootloader.");
-                Console.WriteLine();
+                cb_StatusUpdate("WARNING: The firmware you are about to upload", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate("contains the SPM opcode that performs direct flash writes.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate("If used incorrectly they may overwrite and damage the bootloader.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
                 
                 string answer;
                 while(true) {
-                    Console.Write("Do you understand this and want to continue anyway? (y/n) ");
-                    answer = Console.ReadLine().ToLower();
+                    answer = cb_RequestDataFromUser("Do you understand this and want to continue anyway ? (y/n)").ToLower();
 
                     if (answer == "n") {
                         return false;
@@ -926,21 +983,19 @@ namespace Tsbloader_adv
                 return false;
             }
 
-            Console.WriteLine("");
-            Console.WriteLine("Flash write complete.");
+            cb_StatusUpdate("Flash write complete.", 100, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             return return_to_tsbmainparser();
         }
 
         public bool Flash_Verify(string flash_filename)
         {
-            Console.WriteLine();
-            Console.Write("Flash verify... ");
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            cb_StatusUpdate("Flash verify... ", 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
             if (string.IsNullOrEmpty(flash_filename))
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("No valid filename specified. Please specify the filename to load the Flash data.");
+                cb_StatusUpdate(string.Format("ERROR{0}No valid filename specified. Please specify the filename to load the Flash data.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -951,8 +1006,7 @@ namespace Tsbloader_adv
             }
             else if (nr_bytes_infile > session_data_.appflash)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("File is larger than Flash size. (file size={0}, appflash size={1})", nr_bytes_infile, session_data_.appflash);
+                cb_StatusUpdate(string.Format("ERROR{0}File is larger than Flash size. (file size={1}, flash size={2})", Environment.NewLine, nr_bytes_infile, session_data_.appflash), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -960,6 +1014,8 @@ namespace Tsbloader_adv
             byte[] in_buff = new byte[256];
             int curr_addr = 0;
             bool first_page = true;
+
+            int nr_bytes_infile_rounded_to_page_size = (nr_bytes_infile / session_data_.pagesize) * session_data_.pagesize;
 
             serial_port_.Write("f");
 
@@ -971,8 +1027,7 @@ namespace Tsbloader_adv
                                                                       */
                 if (read_page_from_device(ref in_buff) == false)
                 {
-                    Console.WriteLine("ERROR");
-                    Console.WriteLine("Error while trying to read a page from the device. Starting address 0x{0}", curr_addr);
+                    cb_StatusUpdate(string.Format("ERROR{0}Error while trying to read a page from the device. Page address 0x{1}", Environment.NewLine, curr_addr), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
                 else
@@ -989,14 +1044,26 @@ namespace Tsbloader_adv
                         b = 0;
                     }
 
+                    // to reduce text output and improve performance
+                    // when output is redirected, only update the screen every 2%
+                    // (if we do it every byte we might be doing it >16000 times for a 16k device
+                    // We will sclae this up to 10000 to prevent cases where
+                    // we're repeating the print a few times if the rounding returns the same result
+                    // while at neighboring byte; by upscaling the resolution we work around this
+                    // Additionally, by converting to INT we ca be absolutely sure this will
+                    // eventually divide properly with 500 and actually print
+
+                    // print every 2%
+                    if ( ((curr_addr * 100 / nr_bytes_infile_rounded_to_page_size) % 2) == 0)
+                    {
+                        cb_StatusUpdate(string.Format("Flash verify... 0x{0:X}", curr_addr), (curr_addr * 100) / (nr_bytes_infile - 1), false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL);
+                    }
+
                     for (; b < session_data_.pagesize; b++)
                     {
-                        Console.Write("\rFlash verify... 0x{0:X} ({1}%)", curr_addr, (curr_addr * 100) / (nr_bytes_infile - 1));
-
                         if (large_buff_[curr_addr] != in_buff[b])
                         {
-                            Console.WriteLine(" ERROR");
-                            Console.WriteLine("Verification error at position 0x{0:X}", curr_addr);
+                            cb_StatusUpdate(string.Format("ERROR{0}Verification error at position 0x{1:X}", Environment.NewLine, curr_addr), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                             return false;
                         }
 
@@ -1008,8 +1075,8 @@ namespace Tsbloader_adv
                 }
             } while (curr_addr < nr_bytes_infile);
             /* Cosmetic improvement: round the address displayed to the next page.
-               This is because, if you do a sequence of Write->Verifiy, write will stop counting
-               at an address multiple of pagezise whereas verify above, stopped at the actual end of the file.
+               This is because, if you do a sequence of Write->Verify, write will stop counting
+               at an address multiple of pagesize whereas Verify, above, stopped at the actual end of the file (at the exact byte).
                Bump the address up to the next multiple fo pagesize so that the Write and Verify addresses are the same
                Otherwise it might trick the user into thinking the file was not completely verified.
                The later message "x bytes verified" will display the actual number of bytes verified */
@@ -1018,9 +1085,9 @@ namespace Tsbloader_adv
             {
                 last_addr = (last_addr / session_data_.pagesize + 1) * session_data_.pagesize;
             }
-            Console.WriteLine("\rFlash verify... 0x{0:X} ({1}%)", last_addr, 100);
+            cb_StatusUpdate(string.Format("Flash verify... 0x{0:X}", last_addr), 100, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE);
 
-            Console.WriteLine("Flash Verification sucessful. Verified all {0} bytes in file {1}", nr_bytes_infile, flash_filename);
+            cb_StatusUpdate(string.Format("Flash Verification sucessful. Verified all {0} bytes in file {1}", nr_bytes_infile, flash_filename), -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
 
             return return_to_tsbmainparser();
         }
@@ -1040,8 +1107,9 @@ namespace Tsbloader_adv
              * erased the flash, so we have got the result we wanted.
              */
 
-            Console.WriteLine();
-            Console.Write("Flash Erase... ");
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+
+            cb_StatusUpdate("Flash erase... ", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
 
             serial_port_.Write("F");
@@ -1051,8 +1119,8 @@ namespace Tsbloader_adv
 
             if (serial_port_.BytesToRead != 1)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("No Request signal from bootloader after sending the 'F' char.");
+
+                cb_StatusUpdate(string.Format("ERROR{0}No Request signal from bootloader after sending the 'F' char.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
             else
@@ -1060,8 +1128,7 @@ namespace Tsbloader_adv
                 byte conf = (byte) serial_port_.ReadByte(); /* read the REQUEST byte g */
                 if (conf != REQUEST_CHAR)
                 {
-                    Console.WriteLine("ERROR");
-                    Console.WriteLine("Protocol out of Sync: did not receive the expected REQUEST char. Instead got '{0}'", ((char)conf).ToString());
+                    cb_StatusUpdate(string.Format("ERROR{0}Protocol out of Sync: did not receive the expected REQUEST char. Instead got '{1}'", Environment.NewLine, ((char)conf).ToString()), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
 
@@ -1072,14 +1139,13 @@ namespace Tsbloader_adv
 
                 if (!return_to_tsbmainparser())
                 {
-                    Console.WriteLine("ERROR");
-                    Console.WriteLine("Did not receive a Flash Erase confirmation from bootloader.");
+                    cb_StatusUpdate(string.Format("ERROR{0}Did not receive a Flash Erase confirmation from bootloader.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
             }
 
-            Console.WriteLine("Done");
-            Console.WriteLine("Flash Erase complete.");
+            cb_StatusUpdate("Done", 100, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+            cb_StatusUpdate("Flash Erase complete.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             return true;
         }
 
@@ -1090,14 +1156,13 @@ namespace Tsbloader_adv
              * The bootloader responds with REQUEST and we send a CONFIRM
              */
 
-            Console.Write("Performing Emergency Erase... ");
+            cb_StatusUpdate("Performing Emergency Erase... ", 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
 
             /* Because in an Emergency Erase can't Activate the Bootloader, we must go through the
                process of opening the port and sending the activating chars manually */
             if (bootloader_active_)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("Attempting to Initiate an Emergency Erase but another Bootloader session is already active.{0}End the previous sessio before starting a new one. (in code, use function DeactivateBootloader())", Environment.NewLine);
+                cb_StatusUpdate(string.Format("ERROR{0}Attempting to Initiate an Emergency Erase but another Bootloader session is already active.{0}End the previous sessio before starting a new one. (in code, use function DeactivateBootloader())", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -1124,9 +1189,7 @@ namespace Tsbloader_adv
             }
             catch (Exception ex)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine(string.Format("Error opening Serial port '{0}':", serial_port_.PortName));
-                Console.WriteLine(ex.Message);
+                cb_StatusUpdate(string.Format("ERROR{1}Error opening Serial port '{0}':{2}", serial_port_.PortName, Environment.NewLine, ex.Message), -1, true,  en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -1137,8 +1200,7 @@ namespace Tsbloader_adv
              */
             if (serial_port_.BytesToRead > 0)
             {
-                Console.WriteLine("< " + serial_port_.ReadExisting().ToString().Replace("\n", "\n< "));
-                Console.WriteLine();
+                cb_StatusUpdate(string.Format("< {0}", serial_port_.ReadExisting().ToString().Replace("\n", "\n< ")), 0, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             }
 
 
@@ -1150,13 +1212,13 @@ namespace Tsbloader_adv
             /* wait for reply or timeout */
             wait_for_reply(reply_timeout_ms, bootloader_activation_messagesize);
 
-            if (serial_port_.BytesToRead != 0) /* if no reply */
+            if (serial_port_.BytesToRead != 0) /* if we have a reply, the bootloader is not password protected */
             {
-                Console.WriteLine("HALT");
-                Console.WriteLine();
-                Console.WriteLine("It seems the Bootloader is still accessible without password.");
-                Console.WriteLine("No Emergency Erase will be performed. If you wish to erase flash or eeprom");
-                Console.WriteLine("memories on a device without password, use '-fop=e' and '-eop=e' instead.");
+                cb_StatusUpdate("HALT", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                
+                cb_StatusUpdate("It seems the Bootloader is still accessible without password.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate("No Emergency Erase will be performed. If you wish to erase flash and/or eeprom", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate("memories on a device without password, use '-fop=e' and '-eop=e' instead.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -1181,14 +1243,14 @@ namespace Tsbloader_adv
                 wait_for_reply(command_reply_timeout_ms, 1);
                 if (serial_port_.BytesToRead != 1)
                 {
-                    Console.WriteLine("ERROR");
+                    cb_StatusUpdate("ERROR", -1, true,en_cb_status_update_lineending.CBSU_NEWLINE);
 
                     if (b == 0)
                     {
-                        Console.WriteLine("No reply from bootloader. (Is the device connected? Did you power cycle the device?)");
+                        cb_StatusUpdate("No reply from bootloader. (Is the device connected? Did you power cycle the device?)", -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     }
                     else {
-                        Console.WriteLine("No Request signal from bootloader after sending CONFIRMATION of Erase.");
+                        cb_StatusUpdate("No Request signal from bootloader after sending CONFIRMATION of Erase.", -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     }
                     return false;
                 }
@@ -1197,8 +1259,8 @@ namespace Tsbloader_adv
                     byte conf = (byte)serial_port_.ReadByte(); /* read the REQUEST byte g */
                     if (conf != REQUEST_CHAR)
                     {
-                        Console.WriteLine("ERROR");
-                        Console.WriteLine("Protocol out of Sync: did not receive the expected REQUEST char in the {1} cycle. Instead got '{0}'", ((char)conf).ToString(), b+1);
+                        cb_StatusUpdate("ERROR", -1, true,  en_cb_status_update_lineending.CBSU_NEWLINE);
+                        cb_StatusUpdate(string.Format("Protocol out of Sync: did not receive the expected REQUEST char in the {1} cycle. Instead got '{0}'", ((char)conf).ToString(), b+1), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                         return false;
                     }
                 }
@@ -1212,16 +1274,15 @@ namespace Tsbloader_adv
 
             for (byte b=0; b<=10; b++)
             {
-                Console.Write("\rPerforming Emergency Erase... {0}", progress_signals.Substring(b, 1));
+                cb_StatusUpdate(string.Format("Performing Emergency Erase... {0}", progress_signals.Substring(b, 1)), 33, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL);
                 wait_for_reply(command_reply_timeout_ms, 1); /* wait for the CONFIRMATION char; to inform the Emergency Erase is done
                                                                 wait longer than usual as mutiple memories must be erased */
             }
-            Console.Write("\rPerforming Emergency Erase... "); // reset cursor to position
+            cb_StatusUpdate(string.Format("Performing Emergency Erase... "), 66, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL);
 
             if (serial_port_.BytesToRead != 1)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("The bootloader has not sent confirmation indicating Emergency Erase is complete.");
+                cb_StatusUpdate(string.Format("ERROR{0}The bootloader has not sent confirmation indicating Emergency Erase is complete.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
             else
@@ -1229,14 +1290,13 @@ namespace Tsbloader_adv
                 byte conf = (byte)serial_port_.ReadByte(); /* read the REQUEST byte g */
                 if (conf != CONFIRM_CHAR)
                 {
-                    Console.WriteLine("ERROR");
-                    Console.WriteLine("Protocol out of Sync: Did not received the Confirmation character indicating Emergency Erase is complete. Instead got '{0}'", ((char)conf).ToString());
+                    cb_StatusUpdate(string.Format("ERROR{0}Protocol out of Sync: Did not received the Confirmation character indicating Emergency Erase is complete. Instead got '{1}'", Environment.NewLine, ((char)conf).ToString()), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
             }
 
-            Console.WriteLine("Done");
-            Console.WriteLine("Emergency Erase complete.");
+            cb_StatusUpdate("Done", 100, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE);
+            cb_StatusUpdate("Emergency Erase complete.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             return true;
         }
 
@@ -1265,8 +1325,7 @@ namespace Tsbloader_adv
 
             if (serial_port_.BytesToRead < session_data_.pagesize)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("Received an incomplete page ({0} bytes)", serial_port_.BytesToRead);
+                cb_StatusUpdate(string.Format("ERROR{1}Received an incomplete page ({0} bytes)", serial_port_.BytesToRead, Environment.NewLine), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
 
                 /* pull whatever bytes there are so that they won't be disturbing/offseting further reads */
                 serial_port_.Read(buff, 0, serial_port_.BytesToRead);
@@ -1281,8 +1340,7 @@ namespace Tsbloader_adv
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("PROGRAM ERROR");
-                    Console.WriteLine("While pulling Data page from device: " + ex.Message);
+                    cb_StatusUpdate(string.Format("PROGRAM ERROR{1}While pulling Data page from device: {0})", ex.Message, Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
             }
@@ -1293,6 +1351,10 @@ namespace Tsbloader_adv
             /* Reads all pages to the large_buff */
             byte[] in_buff = new byte[256];
             int large_buff_ix = 0;
+
+            int nr_bytes_to_read_rounded_to_page_size = (nr_bytes_to_read / session_data_.pagesize) * session_data_.pagesize;
+
+
 
             do
             {
@@ -1309,12 +1371,18 @@ namespace Tsbloader_adv
                     Array.Copy(in_buff, 0, large_buff_, large_buff_ix, session_data_.pagesize); // in_buff.CopyTo(large_buff_, large_buff_ix);
                     large_buff_ix += session_data_.pagesize;
 
-                    Console.Write("\r{2} 0x{0:X} ({1}%)", large_buff_ix - 1, (large_buff_ix * 100) / nr_bytes_to_read, s_progress_preffix_print);
+                    // print every 2%
+                    if ( (( large_buff_ix * 100  / nr_bytes_to_read_rounded_to_page_size) % 2) == 0)
+                    {
+                        cb_StatusUpdate(string.Format("{1} 0x{0:X}", large_buff_ix - 1, s_progress_preffix_print), (large_buff_ix * 100) / nr_bytes_to_read, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL);
+                    }                    
                 }
             } while (large_buff_ix < nr_bytes_to_read);
 
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+
             nr_bytes_returned = large_buff_ix; /* don't add +1 here! large_buff_ix always points to the next address to write
-                                                * the variable is zeor based, but bc it walways pointing at the next position
+                                                * the variable is zer0 based, but bc it always pointing at the next position
                                                 * to write, the value it holds is actually the count so far, because that value
                                                 * is a pointer to a position not yet written */
 
@@ -1330,8 +1398,7 @@ namespace Tsbloader_adv
 
             if (serial_port_.BytesToRead != 1)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("No request from bootloader to initiate page writing.");
+                cb_StatusUpdate(string.Format("ERROR{0}No request from bootloader to initiate page writing.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -1348,8 +1415,7 @@ namespace Tsbloader_adv
             }
             else
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("Bootloader request character is invalid ('{0}').", (char) c);
+                cb_StatusUpdate(string.Format("ERROR{0}Bootloader request character is invalid ('{1}').", Environment.NewLine, (char) c), -1,true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
         }
@@ -1359,6 +1425,8 @@ namespace Tsbloader_adv
             /* Writes all pages in the large_buff to the device */
             byte[] out_buff = new byte[256];
             int large_buff_ix = 0;
+
+            int nr_bytes_to_write_rounded_to_pagesize = (nr_bytes_to_write / session_data_.pagesize) * session_data_.pagesize;
 
             do
             {
@@ -1373,9 +1441,15 @@ namespace Tsbloader_adv
                 {
                     large_buff_ix += session_data_.pagesize;
 
-                    Console.Write("\r{2} 0x{0:X} ({1}%)", large_buff_ix, (large_buff_ix * 100) / nr_bytes_to_write, s_progress_preffix_print);
+                    // print every 2%
+                    if ( ((large_buff_ix * 100 / nr_bytes_to_write_rounded_to_pagesize) % 2) == 0)
+                    {
+                        cb_StatusUpdate(string.Format("{1} 0x{0:X}", large_buff_ix - 1, s_progress_preffix_print), (large_buff_ix * 100) / nr_bytes_to_write, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL);
+                    }
                 }
             } while (large_buff_ix < nr_bytes_to_write);
+
+            cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
 
             return true;
         }
@@ -1397,7 +1471,7 @@ namespace Tsbloader_adv
                 /* Let's see if we already have the CONFIRM meaning we're back at the main parser */
                 wait_for_reply(command_reply_timeout_ms, 1);
 
-                //DEBUG:Console.WriteLine(string.Format("Bytes to read: {0}", serial_port_.BytesToRead));
+                //DEBUG:cb_StatusUpdate(string.Format("Bytes to read: {0}", serial_port_.BytesToRead));
 
                 if (serial_port_.BytesToRead >= 1)
                 {
@@ -1441,8 +1515,8 @@ namespace Tsbloader_adv
         {
             if (!bootloader_active_)
             {
-                Console.WriteLine("ERROR");
-                Console.WriteLine("Bootloader not active.");
+                //cb_StatusUpdate("ERROR");
+                // cb_StatusUpdate("Bootloader not active.");
                 return false;
             }
             else
@@ -1517,14 +1591,13 @@ namespace Tsbloader_adv
                     sw.Flush();
                     sw.Close();
 
-                    Console.WriteLine("Done");
+                    cb_StatusUpdate("Done", 100,false, en_cb_status_update_lineending.CBSU_NEWLINE);
 
                     return true;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("FILE ERROR");
-                    Console.WriteLine("While attempting to write to IHEX format file '{0}': {1}", filename, ex.Message);
+                    cb_StatusUpdate(string.Format("FILE ERROR{0}While attempting to write to IHEX format file '{1}': {2}", Environment.NewLine, filename, ex.Message),-1,true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
             }
@@ -1539,14 +1612,13 @@ namespace Tsbloader_adv
                     bw.Flush();
                     bw.Close();
 
-                    Console.WriteLine("Done");
+                    cb_StatusUpdate("Done", 100, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE);
 
                     return true;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("FILE ERROR");
-                    Console.WriteLine("While attempting to write to BIN format file '{0}': {1}", filename, ex.Message);
+                    cb_StatusUpdate(string.Format("FILE ERROR{0}While attempting to write to BIN format file '{1}': {2}", Environment.NewLine, filename, ex.Message),-1,true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
             }
@@ -1599,8 +1671,7 @@ namespace Tsbloader_adv
                             {
                                 if (split_line.first_address != curr_addr)
                                 {
-                                    Console.WriteLine("ERROR");
-                                    Console.WriteLine("DATA in IHEX file is not written in sequential memory addresses. Offending address at line {0}", curr_line);
+                                    cb_StatusUpdate(string.Format("ERROR{0}DATA in IHEX file is not written in sequential memory addresses. Offending address at line {1}", curr_line), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                                     sr.Close();
                                     return false;
                                 }
@@ -1624,8 +1695,7 @@ namespace Tsbloader_adv
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("FILE ERROR");
-                    Console.WriteLine("While attempting to read IHEX format file '{0}': {1}", filename, ex.Message);
+                    cb_StatusUpdate(string.Format("FILE ERROR{0}While attempting to read IHEX format file '{1}': {2}", Environment.NewLine, filename, ex.Message), -1, true,  en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
             }
@@ -1644,8 +1714,7 @@ namespace Tsbloader_adv
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine("FILE ERROR");
-                    Console.WriteLine("While attempting to read BIN format file '{0}': {1}", filename, ex.Message);
+                    cb_StatusUpdate(string.Format("FILE ERROR{0}While attempting to read BIN format file '{1}': {2}", Environment.NewLine, filename, ex.Message), -1,true, en_cb_status_update_lineending.CBSU_NEWLINE);
                     return false;
                 }
             }
@@ -1796,32 +1865,32 @@ namespace Tsbloader_adv
 
         private void print_ihex_error(str_split_intelhex_line split_line, int line_nr)
         {
-            Console.WriteLine("IHEX PARSING ERROR");
+            cb_StatusUpdate("IHEX PARSING ERROR", -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
 
             switch (split_line.validation_result)
             {
                 case en_intelhex_validationresult.IHEX_INCOMPLETE_LINE:
-                    Console.WriteLine("IHEX line is incomplete/too short (at line nr {0})", line_nr);
+                    cb_StatusUpdate(string.Format("IHEX line is incomplete/too short (at line nr {0})", line_nr), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
                     break;
 
                 case en_intelhex_validationresult.IHEX_INVALID_CHECKSUM:
-                    Console.WriteLine("Invalid Checksum at line nr {0}", line_nr);
+                    cb_StatusUpdate(string.Format("Invalid Checksum at line nr {0}", line_nr), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
                     break;
 
                 case en_intelhex_validationresult.IHEX_INVALID_HEX_STRING:
-                    Console.WriteLine("Invalid HEX value representation (at line nr {0})", line_nr);
+                    cb_StatusUpdate(string.Format("Invalid HEX value representation (at line nr {0})", line_nr), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
                     break;
 
                 case en_intelhex_validationresult.IHEX_LINE_TOO_LONG:
-                    Console.WriteLine("IHEX line is too long (at line nr {0})", line_nr);
+                    cb_StatusUpdate(string.Format("IHEX line is too long (at line nr {0})", line_nr), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
                     break;
 
                 case en_intelhex_validationresult.IHEX_NO_START_CHAR:
-                    Console.WriteLine("Invalid line in IHEX file: No start char. (at line nr {0})", line_nr);
+                    cb_StatusUpdate(string.Format("Invalid line in IHEX file: No start char. (at line nr {0})", line_nr), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
                     break;
 
                 default:
-                    Console.WriteLine("Unspecified error parsing file (at line nr {0})", line_nr);
+                    cb_StatusUpdate(string.Format("Unspecified error parsing file (at line nr {0})", line_nr), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
                     break;
             }
         }

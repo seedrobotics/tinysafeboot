@@ -91,7 +91,7 @@ namespace Tsbloader_adv
                     {
                         Console.WriteLine("ERROR");
                         Console.WriteLine("No reply from the Seed Eros device.");
-                        Console.WriteLine("(Is this Serial Port connected to a Seed Eros device? Is the device already in bridge mode?)");
+                        Console.WriteLine("(Is this the Serial Port of the Seed Eros device? Is the device already in bridge mode?)");
                         return RETURN_SEEDEROS_COMMAND_FAILED;
                     }
                     else
@@ -136,10 +136,10 @@ namespace Tsbloader_adv
                     serial_port.Open();
                     serial_port.DtrEnable = true; /* on Mono / .Net we apparently need to explicitly set DTR */
 
-                    System.Threading.Thread.Sleep(800); /* wait a couple of seconds */
+                    System.Threading.Thread.Sleep(800); /* wait a moment */
 
                     serial_port.Close();
-                    System.Threading.Thread.Sleep(1000); /* wait a couple of seconds */
+                    System.Threading.Thread.Sleep(200); /* wait some other moment; just give Serial driver some spare time */
 
                     Console.WriteLine(" Done.\n");
                     Console.WriteLine("  ( If your firmware supports host request to exit bridge mode, the unit's LEDs should be back to white/three colours.");
@@ -172,10 +172,11 @@ namespace Tsbloader_adv
                 
                 Console.WriteLine();
                 Console.WriteLine("WARNING: Emergency Erase deletes all Application Flash");
-                Console.WriteLine("and EEPROM data, as well as Timeout and Password.");
+                Console.WriteLine("and EEPROM data, as well as:");
+                Console.WriteLine("  Timeout, Password and Magic Byte!");
                 Console.WriteLine("No Firmware or EEPROM data will be left on the device after");
                 Console.WriteLine("this operation.");
-                Console.WriteLine("This provides for a clean TSB with default values.");
+                Console.WriteLine("This creates a clean TSB configuration with default values.");
                 Console.WriteLine();
                 Console.WriteLine("IMPORTANT! An Emergency Erase DOES NOT target an individual");
                 Console.WriteLine("device; if the device is connected on a BUS (Daisy chain),");
@@ -200,7 +201,7 @@ namespace Tsbloader_adv
 
                 Console.WriteLine();
 
-                TSBInterfacing tsb = new TSBInterfacing();
+                TSBInterfacing tsb = new TSBInterfacing(UpdateStatusOnScreen,AskQuestion_ToUser );
                 if (!tsb.EmergencyErase(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms))
                 {
                     Console.WriteLine();
@@ -234,7 +235,7 @@ namespace Tsbloader_adv
 
             foreach (string pwd in cmd_parser.bootloader_passwords)
             {
-                TSBInterfacing tsb = new TSBInterfacing();
+                TSBInterfacing tsb = new TSBInterfacing(UpdateStatusOnScreen, AskQuestion_ToUser);
                 bool activation_result = false;
 
                 if (pwd.Length > 0)
@@ -451,6 +452,7 @@ namespace Tsbloader_adv
                                 while (true)
                                 {
                                     Console.WriteLine();
+                                    Console.WriteLine("Current timeout is set to value {0}", tsb.session_data_.timeout);
                                     Console.WriteLine("Please enter the new Timeout setting: ");
                                     string new_timeout = Console.ReadLine();
 
@@ -478,6 +480,60 @@ namespace Tsbloader_adv
 
                                 /* no need to confirm this one; save immediately */
                                 tsb.session_data_.timeout = (byte)new_timeout_setting;
+                                if (!tsb.LastPage_Write())
+                                {
+                                    Console.WriteLine();
+                                    Console.WriteLine("> Error writing bootloader configuration data.");
+                                    errors_encountered = true;
+                                }
+                                break;
+
+                            case CommandLineParser.en_bootloader_operations.WRITE_MAGIC_BYTES:
+                                /* ask the user for the new magic bytes */
+                                string[] s_magic_bytes_names = { "First", "Second" };
+
+                                Console.WriteLine();
+                                Console.WriteLine("Current Magic Bytes are set to [0x{0:X02}] [0x{1:X02}]", tsb.session_data_.magic_bytes[0], tsb.session_data_.magic_bytes[1]);
+
+                                for (byte b = 0; b < 2; b++)
+                                {
+                                    while (true)
+                                    {
+                                        Console.WriteLine();
+                                        Console.WriteLine("Enter the {0} Magic Byte, in HEX format (i.e. '0xA6', type 'A6', omitting the '0x'):", s_magic_bytes_names[b]);
+                                        string magic_byte = Console.ReadLine();
+
+                                        if (string.IsNullOrWhiteSpace(magic_byte))
+                                        {
+                                            Console.WriteLine("Empty Magic Byte specified; setting it to 0xFF");
+                                            magic_byte = "FF";
+                                        }
+
+                                        int mb;
+                                        try
+                                        {
+                                            // based on tips for parsing HEX here https://theburningmonk.com/2010/02/converting-hex-to-int-in-csharp/
+                                            mb = int.Parse(magic_byte, System.Globalization.NumberStyles.HexNumber);
+
+                                            if (mb > 255)
+                                            {
+                                                Console.WriteLine("ERROR: HEX number too big. Magic bytes are of BYTE type in range 0x0 to 0xFF.");
+                                            }
+                                            else
+                                            {
+                                                tsb.session_data_.magic_bytes[b] = (byte)mb;
+                                                break;
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            Console.WriteLine("ERROR: Invalid HEX value. Magic bytes are set in HEX. Example: set to 0xA7, type 'A7' and ommit the '0x' part.");
+                                        }                                            
+                                    }
+                                }
+
+                                /* Save now */
+                                Console.WriteLine("Magic Bytes will be set to: [0x{0:X02}] [0x{1:X02}]", tsb.session_data_.magic_bytes[0], tsb.session_data_.magic_bytes[1]);
                                 if (!tsb.LastPage_Write())
                                 {
                                     Console.WriteLine();
@@ -528,9 +584,10 @@ namespace Tsbloader_adv
             Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Version  : {0}", tsb.session_data_.buildver), string.Format("Name     : {0}", tsb.session_data_.device_name));
             Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Password : {0}", tsb.session_data_.password),  string.Format("Signature: {0}", tsb.session_data_.device_signature));
             Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Timeout  : {0}", tsb.session_data_.timeout), string.Format("Flash    : {0}b", tsb.session_data_.flash_size));
-            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("AppJump  : {0:X4}", tsb.session_data_.appjump_address), string.Format("Appflash : {0}b", tsb.session_data_.appflash));
+            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("MagicByte: 0x{0:X02} 0x{1:X02}", tsb.session_data_.magic_bytes[0], tsb.session_data_.magic_bytes[1]),                                       string.Format("Appflash : {0}b", tsb.session_data_.appflash));
             Console.WriteLine(" {0,-28}  {1, -35}", "Patch for Daisy Chain", string.Format("EEProm   : {0}b", tsb.session_data_.eeprom_size));
             Console.WriteLine(" {0,-28}  {1, -35}", string.Format("operation: {0}", tsb.session_data_.daisychain_patch_in_lastpage ? "Applied" : "Not Applied"), string.Format("Pagesize : {0}b", tsb.session_data_.pagesize));
+            Console.WriteLine(" {0,-28}  {1, -35}", "", string.Format("AppJump  : {0:X4}", tsb.session_data_.appjump_address));
             Console.WriteLine("==================================================================");
         }
 
@@ -596,6 +653,43 @@ namespace Tsbloader_adv
             {
                 return false;
             }
+        }
+
+
+        static string AskQuestion_ToUser(string question)
+        {
+            // must use WriteLine, to force a newline, so that the quesiton is sent to the buffered
+            // app in case we're redirecting the output
+            Console.WriteLine(question);
+            return Console.ReadLine();
+        }
+
+        static void UpdateStatusOnScreen(string msg, int progess_percent, bool msg_contains_error, TSBInterfacing.en_cb_status_update_lineending line_ending_behaviour)
+        {
+            // build the message all in one go so that we only call console.write once
+            // this should speed up performance significantly if output is redirected
+            string s = "";
+
+            if (line_ending_behaviour == TSBInterfacing.en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL ||
+                line_ending_behaviour == TSBInterfacing.en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE)
+            {
+                s += "\r";
+            }
+
+            s += msg;
+
+            if (progess_percent>=0)
+            {
+                s += string.Format(" ({0}%)", progess_percent);
+            }
+
+            if (line_ending_behaviour == TSBInterfacing.en_cb_status_update_lineending.CBSU_NEWLINE || 
+                line_ending_behaviour == TSBInterfacing.en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE)
+            {
+                s += Environment.NewLine;
+            }
+
+            Console.Write(s);
         }
 
         static void UnhandledExceptionTrapper(object sender, UnhandledExceptionEventArgs e)

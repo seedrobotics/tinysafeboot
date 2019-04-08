@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "tsbloader_adv", "tsbloader_
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DynamixelCommandGenerator", "DynamixelCommander\DynamixelCommandGenerator.csproj", "{31E47999-B1A6-4AC9-AD41-B17AC84B6D1D}"
 EndProject
-Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "ActuatorFlasher_ForTSB", "GUIFlasher_ForTSB\ActuatorFlasher_ForTSB.vbproj", "{C864AC88-2DD2-4436-9796-07D37242E0B5}"
+Project("{F184B08F-C81C-45F6-A57F-5ABD9991F28F}") = "GUI_ForTSB", "GUIFlasher_ForTSB\GUI_ForTSB.vbproj", "{C864AC88-2DD2-4436-9796-07D37242E0B5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

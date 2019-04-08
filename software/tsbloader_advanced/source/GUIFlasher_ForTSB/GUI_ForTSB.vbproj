@@ -6,8 +6,8 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{C864AC88-2DD2-4436-9796-07D37242E0B5}</ProjectGuid>
     <OutputType>WinExe</OutputType>
-    <StartupObject>GUIFlasher_ForTSB.My.MyApplication</StartupObject>
-    <RootNamespace>GUIFlasher_ForTSB</RootNamespace>
+    <StartupObject>GUI_ForTSB.My.MyApplication</StartupObject>
+    <RootNamespace>GUI_ForTSB</RootNamespace>
     <AssemblyName>GUI for Tinysafeboot Loader</AssemblyName>
     <FileAlignment>512</FileAlignment>
     <MyType>WindowsForms</MyType>
@@ -149,6 +149,12 @@
       <ProductName>.NET Framework 3.5 SP1</ProductName>
       <Install>false</Install>
     </BootstrapperPackage>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\142608__autistic-lucario__error.wav" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Resources\353070_ying16_confirm-harpepianoedit %28online-audio-converter.com%29.wav" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

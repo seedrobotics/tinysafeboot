@@ -44,7 +44,7 @@ namespace Tsbloader_adv
         */
 
          private const int default_prewait_ms = 300;
-         private const int default_replytimeout_ms = 3000;
+         private const int default_replytimeout_ms = 1500;
 
         public enum en_bootloader_activation_mode
         { COLD_BOOT, LIVE_VIA_DYNAMIXEL }
@@ -52,7 +52,7 @@ namespace Tsbloader_adv
         public enum en_bootloader_operations
         {
             EEP_ERASE, EEP_WRITE, EEP_VERIFY, EEP_READ, FW_ERASE, FW_WRITE, FW_VERIFY, FW_READ,
-            TIMEOUT_CHANGE, PASSWORD_CHANGE, EMERGENCY_ERASE, SEEDEROS_BRIDGEENABLE, SEEDEROS_BRIDGEDISABLE, DISPLAY_DEVICE_INFO
+            TIMEOUT_CHANGE, PASSWORD_CHANGE, WRITE_MAGIC_BYTES, EMERGENCY_ERASE, SEEDEROS_BRIDGEENABLE, SEEDEROS_BRIDGEDISABLE, DISPLAY_DEVICE_INFO
         }
 
         public List<en_bootloader_operations> bootloader_operations;
@@ -315,8 +315,12 @@ namespace Tsbloader_adv
                                      case 'p':
                                         bootloader_operations.Add(en_bootloader_operations.PASSWORD_CHANGE);
                                         break;
+                                    case 'm':
+                                        bootloader_operations.Add(en_bootloader_operations.WRITE_MAGIC_BYTES);
+                                        break;
 
-                                     default:
+
+                                    default:
                                         throw_error(string.Format("Invalid option '{0}' specified for '{1}'", c, split[0]));
                                         return false;
                                  }

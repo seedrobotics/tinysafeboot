@@ -31,6 +31,8 @@ Partial Class frmGUIFlasher
         Dim resources As System.ComponentModel.ComponentResourceManager = New System.ComponentModel.ComponentResourceManager(GetType(frmGUIFlasher))
         Me.PictureBox1 = New System.Windows.Forms.PictureBox()
         Me.Panel2 = New System.Windows.Forms.Panel()
+        Me.cmdBrowseEEPROMFile = New System.Windows.Forms.Button()
+        Me.cmdBrowseFlashFile = New System.Windows.Forms.Button()
         Me.Label6 = New System.Windows.Forms.Label()
         Me.txtEEPROMFile = New System.Windows.Forms.TextBox()
         Me.txtFlashFile = New System.Windows.Forms.TextBox()
@@ -50,7 +52,6 @@ Partial Class frmGUIFlasher
         Me.Label5 = New System.Windows.Forms.Label()
         Me.chkTSBConfigurePassword = New System.Windows.Forms.CheckBox()
         Me.chkTSBConfigureTimeout = New System.Windows.Forms.CheckBox()
-        Me.txtOutput = New System.Windows.Forms.TextBox()
         Me.chkFTDIHasAutoReset = New System.Windows.Forms.CheckBox()
         Me.cboCOMMPort = New System.Windows.Forms.ComboBox()
         Me.Label1 = New System.Windows.Forms.Label()
@@ -59,6 +60,11 @@ Partial Class frmGUIFlasher
         Me.btnRefreshCOMMPorts = New System.Windows.Forms.Button()
         Me.cmdKillTSB = New System.Windows.Forms.Button()
         Me.lblStatus = New System.Windows.Forms.Label()
+        Me.btnSeedErosEnable = New System.Windows.Forms.Button()
+        Me.Label7 = New System.Windows.Forms.Label()
+        Me.btnSeedErosDisable = New System.Windows.Forms.Button()
+        Me.dlgFileOpen = New System.Windows.Forms.OpenFileDialog()
+        Me.rtfStatus = New System.Windows.Forms.RichTextBox()
         CType(Me.PictureBox1, System.ComponentModel.ISupportInitialize).BeginInit()
         Me.Panel2.SuspendLayout()
         Me.Panel3.SuspendLayout()
@@ -68,7 +74,7 @@ Partial Class frmGUIFlasher
         '
         Me.PictureBox1.Anchor = CType((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.PictureBox1.Image = CType(resources.GetObject("PictureBox1.Image"), System.Drawing.Image)
-        Me.PictureBox1.Location = New System.Drawing.Point(898, 8)
+        Me.PictureBox1.Location = New System.Drawing.Point(866, 8)
         Me.PictureBox1.Name = "PictureBox1"
         Me.PictureBox1.Size = New System.Drawing.Size(141, 43)
         Me.PictureBox1.SizeMode = System.Windows.Forms.PictureBoxSizeMode.Zoom
@@ -80,6 +86,8 @@ Partial Class frmGUIFlasher
         Me.Panel2.Anchor = CType(((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Left) _
             Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.Panel2.BackColor = System.Drawing.Color.White
+        Me.Panel2.Controls.Add(Me.cmdBrowseEEPROMFile)
+        Me.Panel2.Controls.Add(Me.cmdBrowseFlashFile)
         Me.Panel2.Controls.Add(Me.Label6)
         Me.Panel2.Controls.Add(Me.txtEEPROMFile)
         Me.Panel2.Controls.Add(Me.txtFlashFile)
@@ -92,13 +100,37 @@ Partial Class frmGUIFlasher
         Me.Panel2.Controls.Add(Me.chkFlashFile)
         Me.Panel2.Location = New System.Drawing.Point(12, 57)
         Me.Panel2.Name = "Panel2"
-        Me.Panel2.Size = New System.Drawing.Size(1037, 146)
+        Me.Panel2.Size = New System.Drawing.Size(1005, 146)
         Me.Panel2.TabIndex = 3
+        '
+        'cmdBrowseEEPROMFile
+        '
+        Me.cmdBrowseEEPROMFile.Anchor = CType((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.cmdBrowseEEPROMFile.BackColor = System.Drawing.Color.MediumAquamarine
+        Me.cmdBrowseEEPROMFile.FlatStyle = System.Windows.Forms.FlatStyle.Flat
+        Me.cmdBrowseEEPROMFile.Location = New System.Drawing.Point(948, 50)
+        Me.cmdBrowseEEPROMFile.Name = "cmdBrowseEEPROMFile"
+        Me.cmdBrowseEEPROMFile.Size = New System.Drawing.Size(37, 28)
+        Me.cmdBrowseEEPROMFile.TabIndex = 23
+        Me.cmdBrowseEEPROMFile.Text = "..."
+        Me.cmdBrowseEEPROMFile.UseVisualStyleBackColor = False
+        '
+        'cmdBrowseFlashFile
+        '
+        Me.cmdBrowseFlashFile.Anchor = CType((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.cmdBrowseFlashFile.BackColor = System.Drawing.Color.MediumAquamarine
+        Me.cmdBrowseFlashFile.FlatStyle = System.Windows.Forms.FlatStyle.Flat
+        Me.cmdBrowseFlashFile.Location = New System.Drawing.Point(948, 11)
+        Me.cmdBrowseFlashFile.Name = "cmdBrowseFlashFile"
+        Me.cmdBrowseFlashFile.Size = New System.Drawing.Size(37, 28)
+        Me.cmdBrowseFlashFile.TabIndex = 22
+        Me.cmdBrowseFlashFile.Text = "..."
+        Me.cmdBrowseFlashFile.UseVisualStyleBackColor = False
         '
         'Label6
         '
         Me.Label6.AutoSize = True
-        Me.Label6.Location = New System.Drawing.Point(452, 112)
+        Me.Label6.Location = New System.Drawing.Point(452, 109)
         Me.Label6.Name = "Label6"
         Me.Label6.Size = New System.Drawing.Size(168, 17)
         Me.Label6.TabIndex = 21
@@ -108,9 +140,9 @@ Partial Class frmGUIFlasher
         '
         Me.txtEEPROMFile.Anchor = CType(((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Left) _
             Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
-        Me.txtEEPROMFile.Location = New System.Drawing.Point(139, 56)
+        Me.txtEEPROMFile.Location = New System.Drawing.Point(139, 53)
         Me.txtEEPROMFile.Name = "txtEEPROMFile"
-        Me.txtEEPROMFile.Size = New System.Drawing.Size(809, 22)
+        Me.txtEEPROMFile.Size = New System.Drawing.Size(803, 22)
         Me.txtEEPROMFile.TabIndex = 20
         '
         'txtFlashFile
@@ -119,13 +151,13 @@ Partial Class frmGUIFlasher
             Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.txtFlashFile.Location = New System.Drawing.Point(139, 14)
         Me.txtFlashFile.Name = "txtFlashFile"
-        Me.txtFlashFile.Size = New System.Drawing.Size(809, 22)
+        Me.txtFlashFile.Size = New System.Drawing.Size(803, 22)
         Me.txtFlashFile.TabIndex = 19
         '
         'txtHexAddress
         '
         Me.txtHexAddress.Enabled = False
-        Me.txtHexAddress.Location = New System.Drawing.Point(272, 109)
+        Me.txtHexAddress.Location = New System.Drawing.Point(272, 106)
         Me.txtHexAddress.Name = "txtHexAddress"
         Me.txtHexAddress.Size = New System.Drawing.Size(43, 22)
         Me.txtHexAddress.TabIndex = 18
@@ -133,7 +165,7 @@ Partial Class frmGUIFlasher
         'txtServoID
         '
         Me.txtServoID.Enabled = False
-        Me.txtServoID.Location = New System.Drawing.Point(403, 109)
+        Me.txtServoID.Location = New System.Drawing.Point(403, 106)
         Me.txtServoID.Name = "txtServoID"
         Me.txtServoID.Size = New System.Drawing.Size(43, 22)
         Me.txtServoID.TabIndex = 17
@@ -141,7 +173,7 @@ Partial Class frmGUIFlasher
         'Label3
         '
         Me.Label3.AutoSize = True
-        Me.Label3.Location = New System.Drawing.Point(136, 112)
+        Me.Label3.Location = New System.Drawing.Point(136, 109)
         Me.Label3.Name = "Label3"
         Me.Label3.Size = New System.Drawing.Size(137, 17)
         Me.Label3.TabIndex = 16
@@ -150,7 +182,7 @@ Partial Class frmGUIFlasher
         'Label2
         '
         Me.Label2.AutoSize = True
-        Me.Label2.Location = New System.Drawing.Point(321, 112)
+        Me.Label2.Location = New System.Drawing.Point(321, 109)
         Me.Label2.Name = "Label2"
         Me.Label2.Size = New System.Drawing.Size(85, 17)
         Me.Label2.TabIndex = 15
@@ -160,7 +192,7 @@ Partial Class frmGUIFlasher
         '
         Me.chkManipulateEEPROM.AutoSize = True
         Me.chkManipulateEEPROM.Enabled = False
-        Me.chkManipulateEEPROM.Location = New System.Drawing.Point(62, 85)
+        Me.chkManipulateEEPROM.Location = New System.Drawing.Point(62, 82)
         Me.chkManipulateEEPROM.Name = "chkManipulateEEPROM"
         Me.chkManipulateEEPROM.Size = New System.Drawing.Size(194, 21)
         Me.chkManipulateEEPROM.TabIndex = 14
@@ -170,7 +202,7 @@ Partial Class frmGUIFlasher
         'chkEEPROMFile
         '
         Me.chkEEPROMFile.AutoSize = True
-        Me.chkEEPROMFile.Location = New System.Drawing.Point(15, 58)
+        Me.chkEEPROMFile.Location = New System.Drawing.Point(15, 55)
         Me.chkEEPROMFile.Name = "chkEEPROMFile"
         Me.chkEEPROMFile.Size = New System.Drawing.Size(115, 21)
         Me.chkEEPROMFile.TabIndex = 13
@@ -202,7 +234,7 @@ Partial Class frmGUIFlasher
         Me.Panel3.Controls.Add(Me.chkTSBConfigureTimeout)
         Me.Panel3.Location = New System.Drawing.Point(12, 218)
         Me.Panel3.Name = "Panel3"
-        Me.Panel3.Size = New System.Drawing.Size(1037, 144)
+        Me.Panel3.Size = New System.Drawing.Size(1005, 144)
         Me.Panel3.TabIndex = 4
         '
         'txtTSBAdditionalParams
@@ -211,7 +243,7 @@ Partial Class frmGUIFlasher
             Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.txtTSBAdditionalParams.Location = New System.Drawing.Point(198, 101)
         Me.txtTSBAdditionalParams.Name = "txtTSBAdditionalParams"
-        Me.txtTSBAdditionalParams.Size = New System.Drawing.Size(750, 22)
+        Me.txtTSBAdditionalParams.Size = New System.Drawing.Size(744, 22)
         Me.txtTSBAdditionalParams.TabIndex = 24
         '
         'Label4
@@ -278,20 +310,6 @@ Partial Class frmGUIFlasher
         Me.chkTSBConfigureTimeout.Text = "Configure new TSB Timeout"
         Me.chkTSBConfigureTimeout.UseVisualStyleBackColor = True
         '
-        'txtOutput
-        '
-        Me.txtOutput.Anchor = CType((((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Bottom) _
-            Or System.Windows.Forms.AnchorStyles.Left) _
-            Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
-        Me.txtOutput.Font = New System.Drawing.Font("Consolas", 9.0!, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, CType(0, Byte))
-        Me.txtOutput.Location = New System.Drawing.Point(14, 379)
-        Me.txtOutput.Multiline = True
-        Me.txtOutput.Name = "txtOutput"
-        Me.txtOutput.ReadOnly = True
-        Me.txtOutput.ScrollBars = System.Windows.Forms.ScrollBars.Vertical
-        Me.txtOutput.Size = New System.Drawing.Size(1035, 249)
-        Me.txtOutput.TabIndex = 5
-        '
         'chkFTDIHasAutoReset
         '
         Me.chkFTDIHasAutoReset.AutoSize = True
@@ -326,7 +344,7 @@ Partial Class frmGUIFlasher
         Me.btnTSBLoaderLocation.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Left), System.Windows.Forms.AnchorStyles)
         Me.btnTSBLoaderLocation.BackColor = System.Drawing.Color.MediumAquamarine
         Me.btnTSBLoaderLocation.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.btnTSBLoaderLocation.Location = New System.Drawing.Point(16, 634)
+        Me.btnTSBLoaderLocation.Location = New System.Drawing.Point(19, 531)
         Me.btnTSBLoaderLocation.Name = "btnTSBLoaderLocation"
         Me.btnTSBLoaderLocation.Size = New System.Drawing.Size(215, 38)
         Me.btnTSBLoaderLocation.TabIndex = 9
@@ -338,9 +356,9 @@ Partial Class frmGUIFlasher
         Me.btnRunTSBLoader.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.btnRunTSBLoader.BackColor = System.Drawing.Color.MediumAquamarine
         Me.btnRunTSBLoader.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.btnRunTSBLoader.Location = New System.Drawing.Point(870, 634)
+        Me.btnRunTSBLoader.Location = New System.Drawing.Point(869, 531)
         Me.btnRunTSBLoader.Name = "btnRunTSBLoader"
-        Me.btnRunTSBLoader.Size = New System.Drawing.Size(169, 38)
+        Me.btnRunTSBLoader.Size = New System.Drawing.Size(141, 38)
         Me.btnRunTSBLoader.TabIndex = 10
         Me.btnRunTSBLoader.Text = "Run TSB Loader"
         Me.btnRunTSBLoader.UseVisualStyleBackColor = False
@@ -361,9 +379,9 @@ Partial Class frmGUIFlasher
         Me.cmdKillTSB.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.cmdKillTSB.BackColor = System.Drawing.Color.MediumAquamarine
         Me.cmdKillTSB.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.cmdKillTSB.Location = New System.Drawing.Point(695, 634)
+        Me.cmdKillTSB.Location = New System.Drawing.Point(804, 531)
         Me.cmdKillTSB.Name = "cmdKillTSB"
-        Me.cmdKillTSB.Size = New System.Drawing.Size(169, 38)
+        Me.cmdKillTSB.Size = New System.Drawing.Size(139, 38)
         Me.cmdKillTSB.TabIndex = 12
         Me.cmdKillTSB.Text = "Kill TSB Loader"
         Me.cmdKillTSB.UseVisualStyleBackColor = False
@@ -373,18 +391,72 @@ Partial Class frmGUIFlasher
         '
         Me.lblStatus.BackColor = System.Drawing.Color.DimGray
         Me.lblStatus.Dock = System.Windows.Forms.DockStyle.Bottom
-        Me.lblStatus.Location = New System.Drawing.Point(0, 686)
+        Me.lblStatus.Location = New System.Drawing.Point(0, 594)
         Me.lblStatus.Name = "lblStatus"
-        Me.lblStatus.Size = New System.Drawing.Size(1073, 21)
+        Me.lblStatus.Size = New System.Drawing.Size(1041, 21)
         Me.lblStatus.TabIndex = 13
         Me.lblStatus.Text = "Label7"
+        '
+        'btnSeedErosEnable
+        '
+        Me.btnSeedErosEnable.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.btnSeedErosEnable.BackColor = System.Drawing.Color.MediumAquamarine
+        Me.btnSeedErosEnable.FlatStyle = System.Windows.Forms.FlatStyle.Flat
+        Me.btnSeedErosEnable.Location = New System.Drawing.Point(695, 531)
+        Me.btnSeedErosEnable.Name = "btnSeedErosEnable"
+        Me.btnSeedErosEnable.Size = New System.Drawing.Size(93, 28)
+        Me.btnSeedErosEnable.TabIndex = 14
+        Me.btnSeedErosEnable.Text = "Enable"
+        Me.btnSeedErosEnable.UseVisualStyleBackColor = False
+        '
+        'Label7
+        '
+        Me.Label7.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.Label7.AutoSize = True
+        Me.Label7.ForeColor = System.Drawing.Color.White
+        Me.Label7.Location = New System.Drawing.Point(565, 536)
+        Me.Label7.Name = "Label7"
+        Me.Label7.Size = New System.Drawing.Size(124, 17)
+        Me.Label7.TabIndex = 16
+        Me.Label7.Text = "Eros Board Bridge"
+        '
+        'btnSeedErosDisable
+        '
+        Me.btnSeedErosDisable.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.btnSeedErosDisable.BackColor = System.Drawing.Color.MediumAquamarine
+        Me.btnSeedErosDisable.FlatStyle = System.Windows.Forms.FlatStyle.Flat
+        Me.btnSeedErosDisable.Location = New System.Drawing.Point(695, 558)
+        Me.btnSeedErosDisable.Name = "btnSeedErosDisable"
+        Me.btnSeedErosDisable.Size = New System.Drawing.Size(93, 28)
+        Me.btnSeedErosDisable.TabIndex = 17
+        Me.btnSeedErosDisable.Text = "Disable"
+        Me.btnSeedErosDisable.UseVisualStyleBackColor = False
+        '
+        'rtfStatus
+        '
+        Me.rtfStatus.Anchor = CType((((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Bottom) _
+            Or System.Windows.Forms.AnchorStyles.Left) _
+            Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
+        Me.rtfStatus.BorderStyle = System.Windows.Forms.BorderStyle.None
+        Me.rtfStatus.DetectUrls = False
+        Me.rtfStatus.Font = New System.Drawing.Font("Consolas", 9.0!, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, CType(0, Byte))
+        Me.rtfStatus.Location = New System.Drawing.Point(12, 373)
+        Me.rtfStatus.Name = "rtfStatus"
+        Me.rtfStatus.ReadOnly = True
+        Me.rtfStatus.Size = New System.Drawing.Size(1005, 141)
+        Me.rtfStatus.TabIndex = 18
+        Me.rtfStatus.Text = ""
         '
         'frmGUIFlasher
         '
         Me.AutoScaleDimensions = New System.Drawing.SizeF(8.0!, 16.0!)
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
         Me.BackColor = System.Drawing.Color.FromArgb(CType(CType(88, Byte), Integer), CType(CType(89, Byte), Integer), CType(CType(91, Byte), Integer))
-        Me.ClientSize = New System.Drawing.Size(1073, 707)
+        Me.ClientSize = New System.Drawing.Size(1041, 615)
+        Me.Controls.Add(Me.rtfStatus)
+        Me.Controls.Add(Me.btnSeedErosDisable)
+        Me.Controls.Add(Me.Label7)
+        Me.Controls.Add(Me.btnSeedErosEnable)
         Me.Controls.Add(Me.lblStatus)
         Me.Controls.Add(Me.cmdKillTSB)
         Me.Controls.Add(Me.btnRefreshCOMMPorts)
@@ -393,7 +465,6 @@ Partial Class frmGUIFlasher
         Me.Controls.Add(Me.chkFTDIHasAutoReset)
         Me.Controls.Add(Me.cboCOMMPort)
         Me.Controls.Add(Me.Label1)
-        Me.Controls.Add(Me.txtOutput)
         Me.Controls.Add(Me.Panel3)
         Me.Controls.Add(Me.Panel2)
         Me.Controls.Add(Me.PictureBox1)
@@ -428,11 +499,17 @@ Partial Class frmGUIFlasher
     Friend WithEvents Label5 As Label
     Friend WithEvents chkTSBConfigurePassword As CheckBox
     Friend WithEvents chkTSBConfigureTimeout As CheckBox
-    Friend WithEvents txtOutput As TextBox
     Friend WithEvents btnRefreshCOMMPorts As Button
     Friend WithEvents txtTSBAdditionalParams As TextBox
     Friend WithEvents Label4 As Label
     Friend WithEvents cmdKillTSB As Button
     Friend WithEvents Label6 As Label
     Friend WithEvents lblStatus As Label
+    Friend WithEvents btnSeedErosEnable As Button
+    Friend WithEvents Label7 As Label
+    Friend WithEvents btnSeedErosDisable As Button
+    Friend WithEvents cmdBrowseEEPROMFile As Button
+    Friend WithEvents cmdBrowseFlashFile As Button
+    Friend WithEvents dlgFileOpen As OpenFileDialog
+    Friend WithEvents rtfStatus As RichTextBox
 End Class

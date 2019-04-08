@@ -97,11 +97,13 @@ Public Class frmGUIFlasher
 
     Private Sub btnTSBLoaderLocation_Click(sender As Object, e As EventArgs) Handles btnTSBLoaderLocation.Click
         Dim s As String
-        s = InputBox("Enter the location of the TSB Loader Advanced executable (must be the Advanced loader, released by Seed Robotics Ltd under GPL V3)",, Me.TSBLoaderExeLocation)
+        s = GetFileNameToOpen("Select TSB Advanced Loader Console Executable", "EXE Files (*.exe)|*.exe", Me.TSBLoaderExeLocation)
 
-        s = s.Trim
 
-        If s.Length > 0 Then
+        's = InputBox("Enter the location of the TSB Loader Advanced executable (must be the Advanced loader, released by Seed Robotics Ltd under GPL V3)",, Me.TSBLoaderExeLocation)
+        's = s.Trim
+
+        If Not IsNothing(s) Then
             If System.IO.File.Exists(s) Then
                 Me.TSBLoaderExeLocation = s
 
@@ -137,34 +139,19 @@ Public Class frmGUIFlasher
     End Sub
 
     Private Sub btnRunTSBLoader_Click(sender As Object, e As EventArgs) Handles btnRunTSBLoader.Click
-        If Not System.IO.File.Exists(Me.TSBLoaderExeLocation) Then
-            MsgBox("Can't run TSB. The TSB Loader EXE Location is invalid or inaccessible!", vbCritical)
-            btnTSBLoaderLocation_Click(Nothing, Nothing)
-            Return
-        End If
-
-        If chkTSBConfigureTimeout.Checked Then
-            If CInt(txtTSBTimeout.Text) < 50 Then
-                MsgBox("TSB timeout is too small. Minimum we allow is 50 to keep the bootloader accessible.")
-                Return
-            End If
-        End If
 
         Dim sParams As String = BuildTSBParameters()
         If IsNothing(sParams) Then Return
 
-        txtOutput.AppendText(vbCrLf & "----" & vbCrLf)
-        txtOutput.AppendText("Running TSB Command: " & Me.TSBLoaderExeLocation & " " & sParams & vbCrLf)
-
-        ' prepare an stdin file to set the pwd and timeout
+        ' prepare an stdin file to set the pwd and timeout to configure in the bootldr
         ' we should PWD argument first and timeout argument after
-        Dim sStdInText As String = ""
-        If chkTSBConfigurePassword.Checked Then
-            sStdInText &= txtTSBPassword.Text & vbCrLf & "y" & vbCrLf ' password + "y" to confirm setting pwd
-        End If
-        If chkTSBConfigureTimeout.Checked Then
-            sStdInText &= txtTSBTimeout.Text & vbCrLf
-        End If
+        'Dim sStdInText As String = ""
+        'If chkTSBConfigurePassword.Checked Then
+        '    sStdInText &= txtTSBPassword.Text & vbCrLf & "y" & vbCrLf ' password + "y" to confirm setting pwd
+        'End If
+        'If chkTSBConfigureTimeout.Checked Then
+        '    sStdInText &= txtTSBTimeout.Text & vbCrLf
+        'End If
 
 
         If Not chkFTDIHasAutoReset.Checked Then
@@ -173,17 +160,20 @@ Public Class frmGUIFlasher
 
         btnRunTSBLoader.Visible = False
         cmdKillTSB.Visible = True
+        btnSeedErosEnable.Enabled = False
+        btnSeedErosDisable.Enabled = False
 
-        RunWithRedirect(Me.TSBLoaderExeLocation, sParams, sStdInText)
+        RunWithRedirect(Me.TSBLoaderExeLocation, sParams)
     End Sub
     Private Function BuildTSBParameters() As String
         Dim sCommand As String = " -I" ' to that TSB always runs and shows device data even if no action specified
 
-        If cboCOMMPort.Text = "" Then
-            MsgBox("No COMM Port specified!", vbCritical)
-            Return Nothing
+        If chkTSBConfigureTimeout.Checked Then
+            If CInt(txtTSBTimeout.Text) < 50 Then
+                MsgBox("TSB timeout setting is too small. Minimum we allow using the GUI is 50, to keep the bootloader accessible.")
+                Return Nothing
+            End If
         End If
-        sCommand &= " -port=" & cboCOMMPort.Text
 
         If chkFlashFile.Checked Then
             If Not System.IO.File.Exists(txtFlashFile.Text) Then
@@ -253,7 +243,22 @@ Public Class frmGUIFlasher
         chkManipulateEEPROM_CheckedChanged(Nothing, New EventArgs)
     End Sub
 
-    Private Sub RunWithRedirect(ByVal cmdExename As String, cmdArgs As String, sStdInTextToPass As String)
+    Private Sub RunWithRedirect(ByVal cmdExename As String, cmdArgs As String)
+        If Not System.IO.File.Exists(Me.TSBLoaderExeLocation) Then
+            MsgBox("Can't run TSB. The TSB Loader EXE Location is invalid or inaccessible!", vbCritical)
+            btnTSBLoaderLocation_Click(Nothing, Nothing)
+            Return
+        End If
+
+        If cboCOMMPort.Text = "" Then
+            MsgBox("No COMM Port specified!", vbCritical)
+            Return
+        End If
+        cmdArgs &= " -port=" & cboCOMMPort.Text
+
+        UpdateTextBox(vbCrLf & "----")
+        UpdateTextBox("Running TSB Command: " & cmdExename & " " & cmdArgs)
+
         procTSB = New Process()
 
         procTSB.StartInfo.FileName = cmdExename
@@ -287,13 +292,32 @@ Public Class frmGUIFlasher
         End If
     End Sub
 
-    Public Sub UpdateTextBox(txt As String)
+    Public Sub UpdateTextBox(txt As String, Optional cColor As Color = Nothing)
         If Not String.IsNullOrEmpty(txt) Then
-            txtOutput.AppendText(txt & vbCrLf)
+            'txtOutput.AppendText(txt & vbCrLf)
+
+            If txt.ToLower.Contains("error") Or txt.ToLower.Contains("could not activate bootloader") Or
+                txt.ToLower.Contains("warning") Then
+                cColor = Color.Orange
+            End If
+
+            rtfStatus.SelectionStart = rtfStatus.TextLength
+            rtfStatus.SelectionLength = 0 ' Len(txt)
+            If Not IsNothing(cColor) Then
+                rtfStatus.SelectionColor = cColor
+            End If
+
+            rtfStatus.AppendText(txt & vbCrLf)
+
+            rtfStatus.SelectionStart = rtfStatus.TextLength
+            rtfStatus.ScrollToCaret()
 
             If txt.Contains("new Password") And chkTSBConfigurePassword.Checked Then procTSB.StandardInput.Write(txtTSBPassword.Text & vbCrLf & "y" & vbCrLf)
             If txt.Contains("new Timeout") And chkTSBConfigureTimeout.Checked Then procTSB.StandardInput.Write(txtTSBTimeout.Text & vbCrLf)
-            If txt.Contains("Would you like to enter a bootloader password?") Then
+
+            ' the question for entering the password changed from TSBloader_adv.exe v1.0.6 onwards
+            ' we check both for compatibility with the older and newer versions
+            If txt.Contains("enter the bootloader password") Or txt.Contains("Would you like to enter a bootloader password?") Then
                 Dim sBootldrPwd = InputBox("The bootloader on the device appears to have a password." & vbCrLf & "Please enter the Bootloader password:")
                 procTSB.StandardInput.Write(sBootldrPwd & vbCrLf)
             End If
@@ -302,14 +326,21 @@ Public Class frmGUIFlasher
     End Sub
 
     Public Sub NotifyProcessedEnded(txt As String)
-        UpdateTextBox(txt)
-
         If procTSB.ExitCode > 0 Then
-            MsgBox("TSB session ended with error. Please review log.", vbCritical)
+            UpdateTextBox(txt, Color.Red)
+            My.Computer.Audio.Play(My.Resources.FlashError, AudioPlayMode.Background)
+            'MsgBox("TSB session ended with error. Please review log.", vbCritical)
+
+        ElseIf procTSB.ExitCode = 0 Then ' must explicitly set 0 bc if we abort we'll get return code -1; we don't want to do anything in that case
+            UpdateTextBox(txt, Color.Green)
+            My.Computer.Audio.Play(My.Resources.FlashSucess, AudioPlayMode.Background)
         End If
 
         btnRunTSBLoader.Visible = True
         cmdKillTSB.Visible = False
+
+        btnSeedErosDisable.Enabled = True
+        btnSeedErosEnable.Enabled = True
     End Sub
 
     Private Sub procTSB_Exited(sender As Object, e As EventArgs) Handles procTSB.Exited
@@ -329,6 +360,8 @@ Public Class frmGUIFlasher
         btnRunTSBLoader.Visible = True
         cmdKillTSB.Visible = False
 
+        btnSeedErosDisable.Enabled = True
+        btnSeedErosEnable.Enabled = True
     End Sub
 
     Friend Property TSBLoaderExeLocation As String
@@ -341,6 +374,57 @@ Public Class frmGUIFlasher
         End Set
     End Property
 
+    Private Sub btnSeedErosEnable_Click(sender As Object, e As EventArgs) Handles btnSeedErosEnable.Click
+        RunWithRedirect(sTSBLoaderEXELocation, " -seederos=bron")
+    End Sub
 
+    Private Sub btnSeedErosDisable_Click(sender As Object, e As EventArgs) Handles btnSeedErosDisable.Click
+        RunWithRedirect(sTSBLoaderEXELocation, " -seederos=broff")
+    End Sub
+
+    Private Sub txtFlashAndEEPromFile_TextChanged(sender As Object, e As EventArgs) Handles txtFlashFile.TextChanged, txtEEPROMFile.TextChanged
+        ' make sure we are NOT in Linux
+        ' based on https://stackoverflow.com/questions/5116977/how-to-check-the-os-version-at-runtime-e-g-windows-or-linux-without-using-a-con
+        If Environment.OSVersion.Platform <> 4 And
+            Environment.OSVersion.Platform <> 6 And
+            Environment.OSVersion.Platform <> 128 Then
+
+            ' remove all quotes
+            txtFlashFile.Text = txtFlashFile.Text.Replace("""", String.Empty)
+        End If
+    End Sub
+
+    Private Sub cmdBrowseFlashFile_Click(sender As Object, e As EventArgs) Handles cmdBrowseFlashFile.Click
+        Dim s As String = GetFileNameToOpen("Select Flash File", "HEX Files (*.hex)|*.hex|Binary Files (*.bin)|*.bin|All files|*.*", txtFlashFile.Text)
+
+        If Not s Is Nothing Then txtFlashFile.Text = s
+    End Sub
+
+
+    Private Function GetFileNameToOpen(sDialogTitle As String, sExtensionsFilter As String, sCurrentFileName As String) As String
+
+        With dlgFileOpen
+            .Title = sDialogTitle
+            .Filter = sExtensionsFilter
+
+            Dim sStartPath As String = System.IO.Path.GetDirectoryName(sCurrentFileName)
+            If System.IO.Directory.Exists(sStartPath) Then
+                .InitialDirectory = sStartPath
+            End If
+
+            Dim result As DialogResult = .ShowDialog()
+
+            If result = DialogResult.Cancel Then Return Nothing
+        End With
+
+        Return dlgFileOpen.FileName
+
+    End Function
+
+    Private Sub cmdBrowseEEPROMFile_Click(sender As Object, e As EventArgs) Handles cmdBrowseEEPROMFile.Click
+        Dim s As String = GetFileNameToOpen("Select EEPROM File", "Binary Files (*.bin)|*.bin|All files|*.*", txtEEPROMFile.Text)
+
+        If Not s Is Nothing Then txtEEPROMFile.Text = s
+    End Sub
 End Class
 

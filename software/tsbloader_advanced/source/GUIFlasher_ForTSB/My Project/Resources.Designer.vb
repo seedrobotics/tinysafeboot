@@ -39,7 +39,7 @@ Namespace My.Resources
         Friend ReadOnly Property ResourceManager() As Global.System.Resources.ResourceManager
             Get
                 If Object.ReferenceEquals(resourceMan, Nothing) Then
-                    Dim temp As Global.System.Resources.ResourceManager = New Global.System.Resources.ResourceManager("GUIFlasher_ForTSB.Resources", GetType(Resources).Assembly)
+                    Dim temp As Global.System.Resources.ResourceManager = New Global.System.Resources.ResourceManager("GUI_ForTSB.Resources", GetType(Resources).Assembly)
                     resourceMan = temp
                 End If
                 Return resourceMan
@@ -58,6 +58,24 @@ Namespace My.Resources
             Set
                 resourceCulture = value
             End Set
+        End Property
+        
+        '''<summary>
+        '''  Looks up a localized resource of type System.IO.UnmanagedMemoryStream similar to System.IO.MemoryStream.
+        '''</summary>
+        Friend ReadOnly Property FlashError() As System.IO.UnmanagedMemoryStream
+            Get
+                Return ResourceManager.GetStream("FlashError", resourceCulture)
+            End Get
+        End Property
+        
+        '''<summary>
+        '''  Looks up a localized resource of type System.IO.UnmanagedMemoryStream similar to System.IO.MemoryStream.
+        '''</summary>
+        Friend ReadOnly Property FlashSucess() As System.IO.UnmanagedMemoryStream
+            Get
+                Return ResourceManager.GetStream("FlashSucess", resourceCulture)
+            End Get
         End Property
     End Module
 End Namespace

@@ -10,7 +10,7 @@ Imports System.Runtime.InteropServices
 
 <Assembly: AssemblyTitle("ActuatorFlasher_ForTSB")>
 <Assembly: AssemblyDescription("")>
-<Assembly: AssemblyCompany("Seed Robotics Ltd")>
+<Assembly: AssemblyCompany("Seed Cognitiva - Robotics Innovation, Lda")>
 <Assembly: AssemblyProduct("ActuatorFlasher_ForTSB")>
 <Assembly: AssemblyCopyright("GPL V3")>
 <Assembly: AssemblyTrademark("")>
@@ -31,5 +31,5 @@ Imports System.Runtime.InteropServices
 ' by using the '*' as shown below:
 ' <Assembly: AssemblyVersion("1.0.*")> 
 
-<Assembly: AssemblyVersion("0.1.0.6")>
-<Assembly: AssemblyFileVersion("0.1.0.6")>
+<Assembly: AssemblyVersion("1.0.0.9")>
+<Assembly: AssemblyFileVersion("1.0.0.9")>

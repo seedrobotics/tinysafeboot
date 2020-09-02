@@ -24,6 +24,10 @@ Public Class clsAppSettings
     Public Property sCOMMPort As String
     Public Property bFTDIHasAutoReset As Boolean
 
+    Public Property bConfigureMagicBytesChecked As Boolean
+    Public Property sMagicByte1 As String
+    Public Property sMagicByte2 As String
+
     Public Sub CollectSettingsFromForm(f As frmGUIFlasher)
         bFlashChecked = f.chkFlashFile.Checked
         sFlashFilePath = f.txtFlashFile.Text
@@ -47,7 +51,11 @@ Public Class clsAppSettings
         sTSBAdditionalParams = f.txtTSBAdditionalParams.Text
 
         sCOMMPort = f.cboCOMMPort.Text
-        bFTDIHasAUtoReset = f.chkFTDIHasAutoReset.Checked
+        bFTDIHasAutoReset = f.chkFTDIHasAutoReset.Checked
+
+        bConfigureMagicBytesChecked = f.chkConfigureMagicBytes.Checked
+        sMagicByte1 = f.cboMgByte1.Text
+        sMagicByte2 = f.cboMgByte2.Text
 
     End Sub
 
@@ -77,6 +85,10 @@ Public Class clsAppSettings
             If (f.cboCOMMPort.Items.Contains(sCOMMPort)) Then f.cboCOMMPort.Text = sCOMMPort
         End If
         f.chkFTDIHasAutoReset.Checked = bFTDIHasAutoReset
+
+        f.chkConfigureMagicBytes.Checked = bConfigureMagicBytesChecked
+        f.cboMgByte1.Text = sMagicByte1
+        f.cboMgByte2.Text = sMagicByte2
     End Sub
 
 End Class

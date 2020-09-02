@@ -1,19 +1,29 @@
 ;***********************************************************************
-
-; IMPORTANT: THIS VERSION IS FOR ATMEGA ONLY AS IT REQUIRES
-; A UART FOR OPERATION.
-; FOR ATTINYs USE THE REGULAR VERSION
-
 ;***********************************************************************
-
+;***********************************************************************
+; TinySafeBoot - The Universal Bootloader for AVR ATmegas
 ;***********************************************************************
 ;***********************************************************************
 ;***********************************************************************
-; TinySafeBoot - The Universal Bootloader for AVR ATtinys and ATmegas
-; ** Variation using UART and fixed baud rate by Seed Robotics.
-;***********************************************************************
-;***********************************************************************
-;***********************************************************************
+;
+;-----------------------------------------------------------------------
+; 2020 - Version using native UART, Fixed Baud by Seed Robotics in 2020 
+;-----------------------------------------------------------------------
+; meant for use on ATMEGA devices only (with native UART - UART0)
+;
+; Main differences to Regular TSB Bootloader:
+; - Uses a native UART (UART0); therefore not compatible with ATTINY
+; - Baud rate is fixed (set by a macro in the code). No auto bauding.
+; - Disables TX while not transmitting to allow for one wire flashing 
+;   (where RX and TX are shorted, for a multi drop bus)
+; - Also works with separate RX and TX; however an external pull up 
+;   on TX _may_ be required; alternatively you can modify the code
+;   in the ReceiveByte routine so that it won't disable TX.
+; - FIXES:
+;     - situations where booting onto a bus with active communication could
+;       lock the autobauding feature
+;     - times out and boots to application code if the host stops interacting
+;       with the bootloader
 ;
 ;-----------------------------------------------------------------------
 ; Extended by Seed Robotics from 2017
@@ -49,15 +59,13 @@
 ; TSB assembly source is organized in 4 segments (approx. line numbers)
 ;
 ; ~   50 ... Global definitions
-; ~  240 ... TSB Installer for ATtinys
-; ~  470 ... TSB for ATtinys
-; ~ 1180 ... TSB for ATmegas
+; ~      ... TSB for ATmegas
 ;
 ;***********************************************************************
 ; ADJUSTMENTS FOR INDIVIDUAL ASSEMBLY
 ;***********************************************************************
 ;
-; This Sourcecode is directly compatible to: AVRASM2
+; This Sourcecode is directly compatible to: AVRASM2, GAVRASM
 ;
 .nolist
 ;
@@ -96,74 +104,40 @@
 ; BUILD INFO
 ;-----------------------------------------------------------------------
 ; YY = Year - MM = Month - DD = Day
-.set    YY      =       17
-.set    MM      =       6
-.set    DD      =       26
+.set    YY      =       20
+.set    MM      =       7
+.set    DD      =       27
 ;
-.set BUILDSTATE = $70   ; version management option
-; BUILDSTATE >= F0: regular TSB with autobauding
-; BUILDSTATE = 7xx: TSB tests using UART and fixed baud
+.set BUILDSTATE = $F2   ; version management option
 ;
-
 ;-----------------------------------------------------------------------
-; BAUD RATE AND UART PINS CONFIGURATION
-; 
-; Here you need to enter te values for UBRRH and UBRRL
-; and optionally the USE_2X flag.
-;
-; We suggest using the WormFood's AVR baud rate online calculator:
-; http://wormfood.net/avrbaudcalc.php
-; It is ESSENTIAL that you factor in your clock rate.
-; Make sure your fuses are set to use the correct clock source
-; IF you are using the inetrnal RC Oscilator (the default on new chips
-; until you manully change the fuses), you should callibrate it first.
-
-; UBRRH=0; UBBRL=51 sets 9600 bps on an 8Mhz clock 
-; or 19200 bps if you are using a 16Mhz clock
-
-.equ	UBRRH_VALUE		= 0
-.equ	UBRRL_VALUE		= 51 
-
-; .equ	USE_2X			= 0  ; the use of 2X is currently NOT supported 
-							 ; due to code space saving
-
+; TSB / TSB-INSTALLER SWITCH
 ;-----------------------------------------------------------------------
-; REGISTER DEFINITIONS
-; These registers default to UART0 on an ATmegaX8 (ATmega88, ATmega168)
-; If you use a Mega with more UARTs and wish to use another UART adjust
-; the register names
-; If you are using a processor with different register names, adjust
-; accordingly
+; 0 = Regular assembly to target address
+; Other value = NOT SUPPORTED
+;
+.set    TSBINSTALLER = 0
+;
 ;-----------------------------------------------------------------------
-;
-;
-.equ	UBRRL	= UBRR0L
-.equ	UBRRH	= UBRR0H
-.equ	UCSRA	= UCSR0A
-.equ	UCSRB	= UCSR0B
-.equ	UCSRC	= UCSR0C
-
-.equ	UDR		= UDR0
-
-.equ	RXEN	= RXEN0
-.equ	TXEN	= TXEN0
-.equ	TXC		= TXC0
-.equ	RXC		= RXC0
-
-.equ	UCSZ0	= UCSZ00
-.equ	UCSZ1	= UCSZ01
-
-
+; F_CPU and Baud rate setting
 ;-----------------------------------------------------------------------
-; *** Changes below this line are on your own risk! ***
-;-----------------------------------------------------------------------
-;
-;
-;
+.equ	F_CPU	= 16000000
+.equ	BAUD	= 33333			; baudrate (for 56K, it is actually 55,555, so for BAUD_PRESC give an INT result of 8, we must set BAUD to 55500) 
+.equ	BAUD_PRESC	= (F_CPU/16/BAUD) - 1	; baud prescale
+
+.if BAUD_PRESC > 255
+.error "ERROR: BAUD RATE TOO LOW. WE ONLY WRITE THE UBRRL REGISTER, SO UBRR MUST BE <255 FOR THIS CLOCK FREQ AND BAUD"
+.endif
+
+
 ;***********************************************************************
 ; AUTO-ADJUST FOR DIFFERENT ASSEMBLY OPTIONS
 ;***********************************************************************
 ;
+; Always set TINYMEGA=1 bc this code only supports ATMEGA
+
+.equ TINYMEGA=1
+
 .if FLASHEND > ($7fff)
         .error "SORRY! DEVICES OVER 64 KB NOT SUPPORTED YET."
         .exit
@@ -181,14 +155,28 @@
         .equ MCUSR = MCUCSR
 .endif
 
+; Detect Attiny441/841 to amend missing pagesize and apply 4-page mode
+
+.set FOURPAGES = 0
+
+.if ((SIGNATURE_000 == $1E) && (SIGNATURE_002 == $15) && (SIGNATURE_001 == $92))
+                .equ PAGESIZE = 32
+                .set FOURPAGES = 1
+                .message "ATTINY441: 4-PAGE-ERASE MODE"
+.endif
+
+.if ((SIGNATURE_000 == $1E) && (SIGNATURE_002 == $15) && (SIGNATURE_001 == $93))
+                .equ PAGESIZE = 32
+                .set FOURPAGES = 1
+                .message "ATTINY841: 4-PAGE-ERASE MODE"
+.endif
+
 ;-----------------------------------------------------------------------
 ; Universal Constants and Registers
 ;-----------------------------------------------------------------------
 
 .equ    REQUEST         = '?'           ; request / answer / go on
 .equ    CONFIRM         = '!'           ; confirm / attention
-
-.equ	ACTIVATION_CHAR = '@'
 
 ; Current bootloader date coded into 16-bit number
 .equ    BUILDDATE   = YY * 512 + MM * 32 + DD
@@ -200,15 +188,15 @@
 ; Registers (in use by TSB-Firmware and TSB-Installer for ATtinys)
 .def    avecl   = r4                    ; application vector temp low
 .def    avech   = r5                    ; application vector temp high
-;.def    bclkl   = r6                    ; baudclock low byte
-;.def    bclkh   = r7                    ; baudclock high byte
 .def    tmp1    = r16                   ; these are
 .def    tmp2    = r17                   ; universal
 .def    tmp3    = r18                   ; temporary
 .def    tmp4    = r19                   ; registers
 .def    bcnt    = r20                   ; page bytecounter
-
-;
+.def    cntr1   = r21                   ; timeout counter
+.def    rxen    = r22					; check if RX enabled (meaning TX disabled)
+.def    utimeoutH = r23                  ; user timeout High byte     
+										; special purpose registers start at R26
 ;
 ;
 ;***********************************************************************
@@ -221,6 +209,7 @@
 ;
 ; TSB for ATmegas is always coded directly to target address.
 
+.if TINYMEGA == 1
 
 .message "ASSEMBLY OF TSB FOR ATMEGA"
 
@@ -241,106 +230,70 @@ RESET:
 .ifdef SPH
         ldi tmp1, high(RAMEND)          ; write ramend high for ATtinys
         out SPH, tmp1                   ; with SRAM > 256 bytes
+		.message "PROVIDING FOR STACK BIGGER THAN 256 BYTES"
 .endif
 
 ;-----------------------------------------------------------------------
 ; ACTIVATION CHECK
 ;-----------------------------------------------------------------------
+		; Configure UART; no autobauding in this version
 
-;WaitRX:
-;        sbi TXDDR, TXBIT                ; if RX=TX (One-Wire), port is
-;        cbi RXDDR, RXBIT                ; driven open collector style,
-;        sbi RXPORT, RXBIT               ; else RX is input with pullup
-;        sbi TXPORT, TXBIT               ; and TX preset logical High
+		ldi	tmp1,BAUD_PRESC			; load baud prescale
+		sts	UBRR0L,tmp1				; set baud prescale
+		; ldi	tmp2,HIGH(bpsc)			 ; save code by not loading UBBRH
+		;sts	UBRRH,tmp2				; to UBRR0
+		;ldi	tmp2,( (1<<RXEN0) )   	; enable transmiter and receiver
+		;sts	UCSR0B,tmp2	
 
-ConfigureUART:
-		ldi tmp1, UBRRH_VALUE			; set UBRR baud rate registers
-		sts UBRRH, tmp1
-		ldi tmp1, UBRRL_VALUE
-		sts UBRRL, tmp1
-		ldi tmp1, (1 << UCSZ0 ) | (1 << UCSZ1 ) ; Set frame format: 8data, 1stop bit
-		sts UCSRC, tmp1
-		ldi tmp1, (1<<RXEN)				; enable RX only; TX normally disabled for one
-		sts UCSRB, tmp1					; wire compatibility			
+		; Enable Pull up on Port D2
+		cbi DDRD, DDRD2
+		sbi PORTD, PORTD2
 
+		; we will enable RNEN/TXEN in the ReceiveByte and TransmitByte routines
 
-LoadTimeoutByte:                                 
         rcall ZtoLASTPAGE               ; set Z to start'o'LASTPAGE
-        adiw zl, 2                      ; skip first 2 bytes
-        lpm xh, z+                      ; load TIMEOUT byte
-        ldi xl, 128						; TIMEOUT is loaded HIGH
+        adiw zl, 2                      ; skip first 2 bytes (APPJUMP)
+        lpm utimeoutH, z+               ; load TIMEOUT byte and store for use in RX byte timeout
+		ori utimeoutH, (F_CPU / 1000000); prevent bootloader lockout due if it gets an invalid (to small) timeout setting
+										; this ensures value is at least the clock rate, which shoudl give about 40ms
+		clr tmp2						; apparently at times this is not set to 0 on boot? (seen while in debugWire)
+		clr rxen						; same as above
 
-WaitForActivation:
-		rcall ReceiveByte				; pull byte; pull byte has an inner cycle (timeout) of 255
-										; which we must do before every dec of the timeout byte
-        cpi tmp1, 0				        ; if host HAS sent something other than 0
-        brne ActivationCharReceived     ; register ActChar received
-        sbiw xl, 1                      ; use X for Outer counter
-        brcc WaitForActivation          ; to Timeout
-        ;rjmp APPJUMP                   ; Timeout! Goto APPJUMP
+WRX1To:
+		; we'll check the X register which is where ReceibeByte controls the timeout
+		; the overall timeout of receive byte is the timeout set by the user
+		; therefore, if we get characters while X> 0 we're attempting to activate bootloader;
+		; if not, if X=0 we timedout and go to app start
+		rcall ReceiveByte
+		brcs WRX2To						; if X got to 0 (i.e. carry set), assume we timed out
+		cpi tmp1, '@'                   ; did we get an activation char = "@"
+		breq ActCharRcvd
+WRX2To:
+		rjmp APPJUMP                    ; not an activation char goto APPJUMP in LASTPAGE
+        
 
-;-----------------------------------------------------------------------
-; ATMEGA APPJUMP = SIMPLE JUMP TO $0000 (ORIGINAL RESET VECTOR)
-;-----------------------------------------------------------------------
-; Boot Reset Vector (BOOTRST) must be activated for TSB on ATmegas.
-; After timeout or executing commands, TSB for ATmegas will simply
-; handover to the App by a (relative or absolute) jump to $0000.
-
-APPJUMP:
-        rcall SPMwait                   ; make sure everything's done
-		clr tmp1
-		sts UCSRA, tmp1					; disable RX and TX (ie disable UART function)
-
-.if FLASHEND >= ($1fff)
-        jmp  $0000                      ; absolute jump
-.else
-        rjmp $0000                      ; relative jump
-.endif
-
-;-----------------------------------------------------------------------
-; REGISTER RECEIVING AN ACTIVATION CHAR
-; AND CHECK IF WE'RE NOW ACTIVE
-; IF NOT AN ACT CHAR, START THE APP
-;-----------------------------------------------------------------------
-ActivationCharReceived:
-		cpi tmp1, ACTIVATION_CHAR        ; if it is act char
-        breq ActivationCharReceived1     ; register ActChar received
-        rjmp APPJUMP					 ; else start application
-
-ActivationCharReceived1:
-		inc tmp2		; increment count of Activation Chars received
-		cpi tmp2, 3		; if 3 are now received
-		breq CheckPassword ; goto CheckPassword
-		rjmp WaitForActivation ; else go back and wait for activation
-
-;-----------------------------------------------------------------------
-; BAUDRATE CALIBRATION CYCLE
-;-----------------------------------------------------------------------
-
-;Activate:
-;        clr xl                          ; clear temporary
-;        clr xh                          ; baudrate counter
-;        ldi tmp1, 6                     ; number of expected bit-changes
-;actw1:
-;        sbic RXPIN, RXBIT               ; idle 1-states (stopbits, ones)
-;        rjmp actw1
-;actw2:
-;        adiw xl, 1                      ; precision measuring loop
-;        sbis RXPIN, RXBIT               ; count clock cycles
-;        rjmp actw2                      ; while RX is 0-state
-;        dec tmp1
-;        brne actw1
-;actwx:
-;        movw bclkl, xl                  ; save result in bclk
+ActCharRcvd:
+		inc tmp2
+		cpi tmp2, 3
+		brne WRX1To						; branch if not yet at 3; 
+										; otherwise fall through to password check
 
 ;-----------------------------------------------------------------------
 ; CHECK PASSWORD / EMERGENCY ERASE
 ;-----------------------------------------------------------------------
+		; we use the user timeout (utimeoutH) register for COMM timeout 
+		; when we don't get valid data
+		; increase this value to a fixed one now, to cope
+		; with cases where the user timeout is set so low that we don't have time to
+		; do anything
+		ldi utimeoutH, (F_CPU / 78500) ; this should result in 255 for 20Mhz and proportionally
+									   ; less for lower Clocks, so that we get the same time approx. 2.4sec
 
 CheckPassword:
+
 chpw0:  ser tmp4                        ; tmp4 = 255 enables comparison
 chpw1:  lpm tmp3, z+                    ; load pw character from Z
-        and tmp3, tmp4                  ; tmp3 = 0 disables comparison
+        and tmp3, tmp4                  ; if tmp4 = 0 disables comparison, for wrong password scenarios
         cpi tmp3, 255                   ; byte value 255 indicates
         breq chpwx                      ; end of password -> success
 chpw2:  rcall Receivebyte               ; else receive next character
@@ -349,7 +302,7 @@ chpw2:  rcall Receivebyte               ; else receive next character
         cp  tmp1, tmp3                  ; compare password with rxbyte
         breq chpw0                      ; if equal check next character
         clr  tmp4                       ; tmp4 = 0 to loop forever
-        rjmp chpw1                      ; all to smoothen power profile
+        rjmp chpw1                      ; and smoothen power profile
 chpwee:
         ; Fix for ISSUE #1: only check for Emergency Erase if we haven't
 		; gotten a wrong password; if we got a wrong password
@@ -357,9 +310,9 @@ chpwee:
 		; Erase
 		cpi tmp4, 0						; if tmp4=0 we are set to loop forever
 		breq chpw1
-		rcall RequestConfirm            ; request confirmation
+        rcall RequestConfirm            ; request confirm
         brts chpa                       ; not confirmed, leave
-        rcall RequestConfirm            ; request 2nd confirmation
+        rcall RequestConfirm            ; request 2nd confirm
         brts chpa                       ; can't be mistake now
         rcall EmergencyErase            ; go, emergency erase!
         rjmp  Mainloop
@@ -668,23 +621,39 @@ ZtoLASTPAGE:
 ;-----------------------------------------------------------------------
 ; RS232 RECEIVE BYTE
 ;-----------------------------------------------------------------------
-; received byte is returned in tmp1
+
+; uses: tmp1 (received data byte), cntr1 (for timeout)
+; also uses utimeoutH which holds the default timeout defined by the user
+; and X which is actually used to count down
+SetRX:
+		ldi	tmp1,(1<<RXEN0) 		; enable receiver (Transmitter disabled)
+		sts	UCSR0B,tmp1
+		ser rxen
 
 ReceiveByte:
-		clr tmp1						; clear the return register
-		clr tmp3						; inner counter for timeout
+		sbrs rxen, 0
+		rjmp SetRX		
 
-ReceiveByte1:		
-		lds xl, UCSRA					; load UART status register A
-		sbrc xl, RXC					; if not RXComplete, skip
+		; outer counter
+		mov xh, utimeoutH
+		;ldi xl, 128
+
+ReceiveByteShortTimeout:
+		ser cntr1						; inner counter reset
+
+ReceiveByteShortTimeout1:		
+		lds tmp1, UCSR0A				; load UART status register A
+		sbrc tmp1, RXC0					; if not RXComplete, skip
 		rjmp LoadRXByte
-		dec tmp3						; if counter not zero
-		brne ReceiveByte1				; cycle again; else return (timeout)
-		ret
+		dec cntr1						; if counter not zero
+		brne ReceiveByteShortTimeout1	; cycle again; else fall through
+		sbiw xl, 1						; dec outter counter
+		brcc ReceiveByteShortTimeout	; continue of outter counetr still active
+		;ret							; 
 
 LoadRXByte:
-		ldi tmp1, UDR					; else load received character
-		ret
+		lds tmp1, UDR0					; load received character even if RXC is not set
+		ret								; (it loads 0 and UDR FIFO should recover for next char)
 
 ;-----------------------------------------------------------------------
 ; RS232 SEND CONFIRM CHARACTER
@@ -692,23 +661,67 @@ LoadRXByte:
 
 SendConfirm:
         ldi tmp1, CONFIRM
-        ;rjmp Transmitbyte
+        rjmp Transmitbyte
 
 ;-----------------------------------------------------------------------
 ; RS232 TRANSMIT BYTE
 ;-----------------------------------------------------------------------
-; byte to be transmitted is in tmp1
+; uses: tmp1 (transmit byte will be shifted out), tmp2 (bitcounter)
+;
+; with different portlines defined for RX and TX ("Two-Wire")
+; => TX-line is actively driving high/low levels (LSTTL/HCMOS)
+;
+; with the same portline defined for RX and TX ("One-Wire")
+; => TX-line is acting like an open collector/drain with weak pullup
+
+SetTX:
+		ldi	tmp2,(1<<TXEN0)   	; enable transmitter (Receiver disabled)
+		sts	UCSR0B,tmp2	
+		clr rxen
+
+		; wait some guard time to allow receiving devices ot transition
+		; from TX t RX state
+		ser cntr1						; inner counter reset
+SetTXShortTimeout:
+		nop
+		dec cntr1						; if counter not zero
+		brne SetTXShortTimeout			; cycle again; else fall through
+
+
 TransmitByte:
-		ldi xl, (1 << TXEN)	; enable TX, disable RX
-		sts UCSRB, xl
-		sts UDR, tmp1
-CheckTXComplete:
-		lds xl, UCSRA			; load status register
-		sbrs tmp3, TXC			; if TXC is complete (asserted) skip next instruction
-		rjmp CheckTXComplete	; else jump to repeat cycle
-		ldi xl, (1 << RXEN)		; disable TX, enable RX
-		sts UCSRB, tmp3
+		sbrc rxen, 0
+		rjmp SetTX
+
+		; no need to wait for UDRE bc we will wait for TXC on
+		; every char transmitted. TXC occurs later that UDRE
+		; so UDRE should be asserted when TXC asserts
+		sts UDR0, tmp1
+
+WaitForTXC:
+		lds tmp2, UCSR0A		; wait for TXC (and not UDRE)
+		sbrs tmp2, TXC0			; bc after this char we may transition
+		rjmp WaitForTXC			; to receiving chars and we want to make sure we get a clean transition
+		; we need to write a 1 to clear the TXC flag; otherwise the flag won't clear
+		sts UCSR0A, tmp2		; tmp2 should contain an asserted TXC bit
 		ret
+
+
+;-----------------------------------------------------------------------
+; ATMEGA APPJUMP = SIMPLE JUMP TO $0000 (ORIGINAL RESET VECTOR)
+;-----------------------------------------------------------------------
+; Boot Reset Vector (BOOTRST) must be activated for TSB on ATmegas.
+; After timeout or executing commands, TSB for ATmegas will simply
+; handover to the App by a (relative or absolute) jump to $0000.
+
+APPJUMP:
+        rcall SPMwait                   ; make sure everything's done
+
+.if FLASHEND >= ($1fff)
+        jmp  $0000                      ; absolute jump
+.else
+        rjmp $0000                      ; relative jump
+.endif
+
 
 ;-----------------------------------------------------------------------
 ; DEVICE INFO BLOCK = PERMANENT DATA
@@ -724,6 +737,7 @@ DEVICEINFO:
 
 .message "ASSEMBLY OF TSB FOR ATMEGA SUCCESSFULLY FINISHED!"
 
+.endif               ; closing TSB for ATmega sourcecode;
 
 ;***********************************************************************
 ; END OF TSB FOR ATMEGAS

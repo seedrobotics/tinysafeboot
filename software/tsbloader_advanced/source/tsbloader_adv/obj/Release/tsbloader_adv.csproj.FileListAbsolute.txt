@@ -1,1 +1,0 @@
-C:\Seed Robotics GIT\tinysafeboot_atmega88\tsbloader_adv (Seed Robotics own TSB loader)\tsbloader_adv\bin\Release\tsbloader_adv.exe.config

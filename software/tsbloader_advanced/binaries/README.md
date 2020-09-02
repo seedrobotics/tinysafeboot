@@ -20,6 +20,8 @@ From Apr 2019 (version 1.0.8 of the Advanced Loader tool), we've added the "Magi
 So far, only the command line tool supports this, using the -xop=m option. 
 The GUI tool will be updated at a later stage to include this as well.
 
+From August 2020 (version 1.0.9) we introduce changes to better with the new "fixedbaud" variants of the TSB bootloader.
+
 
 FAQs:
 - The binaries don't run on Linux/Mac: say permission denied

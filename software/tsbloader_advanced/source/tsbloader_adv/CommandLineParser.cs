@@ -52,7 +52,8 @@ namespace Tsbloader_adv
         public enum en_bootloader_operations
         {
             EEP_ERASE, EEP_WRITE, EEP_VERIFY, EEP_READ, FW_ERASE, FW_WRITE, FW_VERIFY, FW_READ,
-            TIMEOUT_CHANGE, PASSWORD_CHANGE, WRITE_MAGIC_BYTES, EMERGENCY_ERASE, SEEDEROS_BRIDGEENABLE, SEEDEROS_BRIDGEDISABLE, DISPLAY_DEVICE_INFO
+            TIMEOUT_CHANGE, PASSWORD_CHANGE, WRITE_MAGIC_BYTES, EMERGENCY_ERASE, SEEDEROS_BRIDGEENABLE, SEEDEROS_BRIDGEDISABLE, DISPLAY_DEVICE_INFO,
+            PATCH_DAISY_CHAIN_BUG
         }
 
         public List<en_bootloader_operations> bootloader_operations;
@@ -65,8 +66,7 @@ namespace Tsbloader_adv
         public en_bootloader_activation_mode activation_mode;
         public bool tag_eepromfilename_withdatetimepwd;
         public bool tag_flashfilename_withdatetimepwd;
-        public bool patch_daisychain_bug;
-
+        
 
         private bool port_found_, baud_found_, prewait_found_, timeout_found_, ffile_found_, efile_found_, pwd_found_, xxx_found_, fop_found_,
             eop_found_, xop_found_, tagefile_found_, tagffile_found_, seederos_found_, patch_daisychain_found_, display_device_info_found_,
@@ -130,7 +130,7 @@ namespace Tsbloader_adv
 
                          case "-patchdaisychain":
                              if (patch_daisychain_found_) { throw_error_duplicate_param(split[0]); return false; }
-                             patch_daisychain_bug = true;
+                             bootloader_operations.Add(en_bootloader_operations.PATCH_DAISY_CHAIN_BUG);
                              patch_daisychain_found_ = true;
                              break; 
 
@@ -464,7 +464,9 @@ namespace Tsbloader_adv
             Console.WriteLine("           e=erase, w=write, v=verify, r=read.");
             Console.WriteLine("           Operations are performed in the order they are written]");
             Console.WriteLine("-xop=      [extended options. Multiple options can be specified.");
-            Console.WriteLine("           t=set bootloader timeout, p=set bootloader password.]");
+            Console.WriteLine("             t=set bootloader timeout,");
+            Console.WriteLine("             p=set bootloader password,");
+            Console.WriteLine("             m=set magic bytes]");
             Console.WriteLine("-ffile=    [file name for flash data. Used by flash related options]");
             Console.WriteLine("-efile=    [file name for eeprom data. Used by EEProm related options]");
             Console.WriteLine("-tagefile  [append the current date, time and bootloader password");

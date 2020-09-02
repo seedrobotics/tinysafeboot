@@ -21,14 +21,14 @@ using System.Threading.Tasks;
 
 namespace Tsbloader_adv
 {
-    class Program
+    partial class Program
     {
         private const byte RETURN_INVALID_CMDLINE = 1;
         private const byte RETURN_ERRORS_ENCOUNTERED = 2;
         private const byte RETURN_UNKOWN_OPTION_IN_CASE = 3;
         private const byte RETURN_SEEDEROS_COMMAND_FAILED = 4;
         private const byte RETURN_UNEXPECTED_ERROR = 5;
-        private const byte MINIMUM_TIMEOUT_SETTING = 24;
+        private const byte MINIMUM_TIMEOUT_SETTING = 16;
 
         static int Main(string[] args)
         {
@@ -47,175 +47,58 @@ namespace Tsbloader_adv
                 return RETURN_INVALID_CMDLINE;
             }
 
-            /********************************
-             * SEED EROS Bdrige mode enable/disable requests
-             */
-
-            /* SEED EROS Bridge Enable */
+            /****** SEED EROS Bdrige mode enable/disable requests */
             if (cmd_parser.bootloader_operations.Contains(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEENABLE))
             {
-                System.IO.Ports.SerialPort serial_port = new System.IO.Ports.SerialPort();
+                return EROS_EnableBridgeMode(ref cmd_parser);
+            }
 
-                serial_port.BaudRate = cmd_parser.baudrate_bps;
-                serial_port.PortName = cmd_parser.port_name;
-                serial_port.Encoding = Encoding.ASCII;
+            if (cmd_parser.bootloader_operations.Contains(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEDISABLE))
+            {
+                return EROS_DisableBridgeMode(ref cmd_parser);
+            }
 
-                try
+            /****** Emergency Erase Request
+                Emergency Erase restores bootloader access in case of lost password, by wiping
+                the full FLASH and EEPROM memory areas
+             */
+            if (cmd_parser.bootloader_operations.Contains( CommandLineParser.en_bootloader_operations.EMERGENCY_ERASE)) {
+                enEmergencyEraseConfirmResult eresult = ConfirmEmergencyErase(ref cmd_parser);
+
+                if (eresult == enEmergencyEraseConfirmResult.ER_CONFIRMED)
                 {
-                    Console.WriteLine();
-                    Console.WriteLine("> Seed Robotics Eros: Enabling bridge mode...");
-
-                    serial_port.Open();
-                    System.Threading.Thread.Sleep(cmd_parser.prewait_ms);
-
-                    /* clear out any wrong/previous commands that might exist on the board buffer
-                     * This ensures we're at a clean state of the command parser when we send the bridge enable command */
-                    serial_port.Write("\r\n");
-                    wait_for_reply(serial_port, cmd_parser.replytimeout_ms);
-                    //System.Threading.Thread.Sleep(500); /* wait another 500ms to fully receive all comms */
-                    serial_port.ReadExisting(); /* read and discard */
-
-                    /* now send the actual command */
-                    /* 20 = 4 + 16 (Int bus to USB with DTR reset) */
-                    serial_port.Write("commbridge 20\r\n"); /* this command is specific to the EROS firmware CONSOLE; if you
-                                                         * don't have a console on the port you are trying to open, this is
-                                                         * not necessary;
-                                                         * It bridges the USB interface to the Internal bus, using the
-                                                         * a special bridge mode built for flashing the servos
-                                                         * (it will auto reset the bus on Serial connect, uses a softserial library to
-                                                         * cope with the device side of TSB weird timing, etc.) */
-
-                    wait_for_reply(serial_port, cmd_parser.replytimeout_ms);
-
-                    if (serial_port.BytesToRead < 1)
+                    TSBInterfacing tsb = new TSBInterfacing(UpdateStatusOnScreen, AskQuestion_ToUser);
+                    if (!tsb.EmergencyErase(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms))
                     {
-                        Console.WriteLine("ERROR");
-                        Console.WriteLine("No reply from the Seed Eros device.");
-                        Console.WriteLine("(Is this the Serial Port of the Seed Eros device? Is the device already in bridge mode?)");
-                        return RETURN_SEEDEROS_COMMAND_FAILED;
+                        Console.WriteLine();
+                        Console.WriteLine("> Error while performing Emergency Erase operation.");
+                        return RETURN_ERRORS_ENCOUNTERED;
                     }
                     else
                     {
-                        Console.Write("  < Reply: ");
-                        while (serial_port.BytesToRead > 0)
-                        {
-                            Console.WriteLine(serial_port.ReadLine().ToString());
-                        }
+                        return 0;
                     }
-
-                    serial_port.Close();
-
+                }
+                else if (eresult == enEmergencyEraseConfirmResult.ER_ERROR)
+                {
+                    return RETURN_ERRORS_ENCOUNTERED;
+                }
+                else
+                {
                     return 0;
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("ERROR");
-                    Console.WriteLine(ex.Message);
-                    Console.WriteLine();
-                    Console.WriteLine("> Pre requisite command (SeedEros) failed. Ending session.");
-                    return RETURN_SEEDEROS_COMMAND_FAILED;
-                }
-
             }
 
-            /* SEED EROS Bridge Disable */
-            if (cmd_parser.bootloader_operations.Contains(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEDISABLE))
-            {
-                System.IO.Ports.SerialPort serial_port = new System.IO.Ports.SerialPort();
 
-                /* to exit bridge mode, we open and close the port at 1200 bps */
-                serial_port.BaudRate = 1200;
-                serial_port.PortName = cmd_parser.port_name;
-                serial_port.Encoding = Encoding.ASCII;
+            /********** Main cycle for multi-device bootloader operations 
+                We will cycle through the list of passwords supplied
+                (or use empty password if none supplied)
 
-                try
-                {
-                    Console.WriteLine();
-                    Console.Write("> Seed Robotics Eros: Sending Host request to disable bridge mode...");
-
-                    serial_port.Open();
-                    serial_port.DtrEnable = true; /* on Mono / .Net we apparently need to explicitly set DTR */
-
-                    System.Threading.Thread.Sleep(800); /* wait a moment */
-
-                    serial_port.Close();
-                    System.Threading.Thread.Sleep(200); /* wait some other moment; just give Serial driver some spare time */
-
-                    Console.WriteLine(" Done.\n");
-                    Console.WriteLine("  ( If your firmware supports host request to exit bridge mode, the unit's LEDs should be back to white/three colours.");
-                    Console.WriteLine("    If the LED colour hasn't changed, you need to manually power cycle your unit (including disconnecting the USB cable) to resume regular operation.)");
-
-                    return 0;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("ERROR");
-                    Console.WriteLine(ex.Message);
-                    Console.WriteLine();
-                    Console.WriteLine("> Post process command (SeedEros) failed.");
-                    return RETURN_SEEDEROS_COMMAND_FAILED;
-                }
-
-            }
-
-            /* Emergency Erase Request
-             * Emergency Erase restoresbootloader access in case of lost password, by wiping
-             * the full FLASH and EEPROM memory areas
+                On every iteration we will run the same operations but we will collect user
+                options on each iteration (bc user may want different options for each
+                device)
              */
-            if (cmd_parser.bootloader_operations.Contains( CommandLineParser.en_bootloader_operations.EMERGENCY_ERASE)) {
-
-                if (cmd_parser.activation_mode != CommandLineParser.en_bootloader_activation_mode.COLD_BOOT)
-                {
-                    Console.WriteLine("ERROR: Emergency Erase can only be done in Cold [boot] activation mode.");
-                    return RETURN_ERRORS_ENCOUNTERED;
-                }
-                
-                Console.WriteLine();
-                Console.WriteLine("WARNING: Emergency Erase deletes all Application Flash");
-                Console.WriteLine("and EEPROM data, as well as:");
-                Console.WriteLine("  Timeout, Password and Magic Byte!");
-                Console.WriteLine("No Firmware or EEPROM data will be left on the device after");
-                Console.WriteLine("this operation.");
-                Console.WriteLine("This creates a clean TSB configuration with default values.");
-                Console.WriteLine();
-                Console.WriteLine("IMPORTANT! An Emergency Erase DOES NOT target an individual");
-                Console.WriteLine("device; if the device is connected on a BUS (Daisy chain),");
-                Console.WriteLine("ALL the devices will perform the Emergency Erase.");
-                Console.WriteLine();
-                Console.WriteLine("This function should ONLY be used by experienced users.");
-                Console.WriteLine();
-                Console.Write("Do you fully understand the information above? (Y/n) ");
-                if (!get_YesNo_reply())
-                {
-                    Console.WriteLine();
-                    Console.WriteLine("Operation cancelled. Nothing was done.");
-                    return 0;
-                }
-                Console.Write("Do you wish to continue? (Y/n) ");
-                if (!get_YesNo_reply())
-                {
-                    Console.WriteLine();
-                    Console.WriteLine("Operation cancelled. Nothing was done.");
-                    return 0;
-                }
-
-                Console.WriteLine();
-
-                TSBInterfacing tsb = new TSBInterfacing(UpdateStatusOnScreen,AskQuestion_ToUser );
-                if (!tsb.EmergencyErase(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms))
-                {
-                    Console.WriteLine();
-                    Console.WriteLine("> Error while performing Emergency Erase operation.");
-                    return RETURN_ERRORS_ENCOUNTERED;
-                } else
-                {
-                    return 0;
-                }
-            }
-
-
-            /********** Main cycle for multi-device bootloader operations **************
-            /* Cycle through the passwords specified for the bootloader */
+            
             if (cmd_parser.bootloader_passwords.Count() == 0)
             {
                 /* add a bogus entry with an empty password. Assuming user intends to start the session
@@ -224,8 +107,7 @@ namespace Tsbloader_adv
             }
 
             /* only advance to TSB if we have more commands lined up and requested at the command line */
-            if (cmd_parser.bootloader_operations.Count == 0 ||
-               (cmd_parser.bootloader_operations.Count == 1 && cmd_parser.bootloader_operations.Contains(CommandLineParser.en_bootloader_operations.SEEDEROS_BRIDGEDISABLE)) )
+            if (cmd_parser.bootloader_operations.Count == 0 )
             {
                 Console.WriteLine();
                 Console.WriteLine("> No bootloader actions specified. Ending session");
@@ -238,13 +120,25 @@ namespace Tsbloader_adv
                 TSBInterfacing tsb = new TSBInterfacing(UpdateStatusOnScreen, AskQuestion_ToUser);
                 bool activation_result = false;
 
+                /* from TSB versions of 2020 onwards, we now have an operation timeout
+                       which means the commands must get their complete input in a limited timespan
+
+                      This means that, for setting password, timeout and/or magic bytes
+                      we should ask the user for them beforehand so that they'r ready to go
+                      If we wait for the user input while the sesison is active, the session
+                      will likely timeout.   
+                    */
+                TSBInterfacing.str_tsb_session_data new_user_data = default(TSBInterfacing.str_tsb_session_data);
+                new_user_data.magic_bytes = new byte[2]; // we need to explicit allocate space for this
+
                 if (pwd.Length > 0)
                 {
                     if (cmd_parser.activation_mode == CommandLineParser.en_bootloader_activation_mode.COLD_BOOT)
                     {
                         Console.WriteLine();
-                        Console.WriteLine("> Activating bootloader for device with password: {0}", pwd);
-                        Console.WriteLine();
+                        Console.WriteLine("> Preparing to activate bootloader for device with password: {0}", pwd);
+                        CollectUserOptions_AndUpdateCachedSessionData(ref cmd_parser, ref new_user_data);
+
                         activation_result = tsb.ActivateBootloaderFromColdStart(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd);
                     }
                     else
@@ -255,8 +149,9 @@ namespace Tsbloader_adv
                 } 
                 else if (cmd_parser.activation_mode == CommandLineParser.en_bootloader_activation_mode.COLD_BOOT) {
                     Console.WriteLine();
-                    Console.WriteLine("> Activating bootloader (no device password specified)");
-                    Console.WriteLine();
+                    Console.WriteLine("> Preparing to activate bootloader (no device password specified)");
+                    CollectUserOptions_AndUpdateCachedSessionData(ref cmd_parser, ref new_user_data);
+
                     activation_result = tsb.ActivateBootloaderFromColdStart(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd);
                 }
                 else if (cmd_parser.activation_mode == CommandLineParser.en_bootloader_activation_mode.LIVE_VIA_DYNAMIXEL)
@@ -268,46 +163,18 @@ namespace Tsbloader_adv
                     }
 
                     Console.WriteLine();
-                    Console.WriteLine("> Activating bootloader on 'live' device with Dynamixel ID {0}", cmd_parser.dynid);
-                    Console.WriteLine();
+                    Console.WriteLine("> Preparing to activate bootloader 'live', on device with DynID {0}", cmd_parser.dynid);
+                    CollectUserOptions_AndUpdateCachedSessionData(ref cmd_parser, ref new_user_data);
 
                     // baud after activation should not be hard coded as we may need to speak at higher bauds if going through the EROS board.
                     // timeout for bootloader activation must exceed the time set in the servo firmware.
                     activation_result = tsb.ActivateBootloaderFromDynamixel(cmd_parser.port_name, cmd_parser.baudrate_bps, 9600, (byte) cmd_parser.dynid, 3500, 6000, TSBInterfacing.en_protocol_version.DYNAMIXEL_1);
                 }
 
-
-                /* build a new instance for every new device; this ensures variables and
-                    * control structures come from a clean slate, which makes sense, since we're
-                    * starting a whole new session
-                    */
-                
-
                 if (activation_result == true)
                 {
                     /* Bootloader is active. Print all bootloader information */
                     PrintDeviceInfo(tsb);
-
-                    if (cmd_parser.patch_daisychain_bug)
-                    {
-                        if (tsb.session_data_.daisychain_patch_in_lastpage == false)
-                        {
-                            /* forcing a LastPageWrite will write the data with the necessary
-                                * patches in place to cope with this bug */
-
-                            Console.WriteLine();
-                            Console.WriteLine("> Patching for daisy chain operation", pwd);
-                            Console.WriteLine();
-
-                            tsb.LastPage_Write();
-                        }
-                        else
-                        {
-                            Console.WriteLine();
-                            Console.WriteLine("> Daisy chain patch is already applied", pwd);
-                            Console.WriteLine();
-                        }
-                    }
 
                     /*  check if the user asked to tag the file names.
                         *  This MUST be done here for the cases where we use multiple
@@ -331,6 +198,7 @@ namespace Tsbloader_adv
                     }
 
 
+                    bool request_last_page_write = false;
                     /* loop through the various operations requested */
                     foreach (CommandLineParser.en_bootloader_operations bootloader_op in cmd_parser.bootloader_operations)
                     {
@@ -413,139 +281,43 @@ namespace Tsbloader_adv
                                 break;
 
                             case CommandLineParser.en_bootloader_operations.PASSWORD_CHANGE:
-                                /* ask the user for a password */
-                                Console.WriteLine();
-                                Console.WriteLine("Please enter the new Password (max. {0} chars): ", TSBInterfacing.max_pwd_length);
-                                string new_pwd = Console.ReadLine();
-
-                                if (string.IsNullOrEmpty(new_pwd))
-                                {
-                                    new_pwd = "";
-                                    Console.WriteLine("No password specified. The bootloader will be accessible without password.");
-                                }
-                                else if (new_pwd.Length > Tsbloader_adv.TSBInterfacing.max_pwd_length)
-                                {
-                                    Console.WriteLine("ERROR: Password is too long. Maximum password length supported by this tool is {0} characters.", Tsbloader_adv.TSBInterfacing.max_pwd_length);
-                                    Console.WriteLine("> Password has not been changed.");
-                                }
-                                else
-                                {
-                                    Console.WriteLine("New password will be set to: {0}", new_pwd);
-                                    Console.WriteLine("(if you lose your password, you may use the Emergency Erase option '-XXX')");
-                                }
-
-                                if (request_confirm())
-                                {
-                                    tsb.session_data_.password = new_pwd;
-                                    if (!tsb.LastPage_Write())
-                                    {
-                                        Console.WriteLine();
-                                        Console.WriteLine("> Error writing bootloader configuration data.");
-                                        errors_encountered = true;
-                                    }
-                                }
+                                tsb.session_data_.password = new_user_data.password;
+                                request_last_page_write = true;
                                 break;
 
                             case CommandLineParser.en_bootloader_operations.TIMEOUT_CHANGE:
-                                /* ask the user for a timeout */
-                                int new_timeout_setting;
-                                while (true)
-                                {
-                                    Console.WriteLine();
-                                    Console.WriteLine("Current timeout is set to value {0}", tsb.session_data_.timeout);
-                                    Console.WriteLine("Please enter the new Timeout setting: ");
-                                    string new_timeout = Console.ReadLine();
-
-                                    if (string.IsNullOrEmpty(new_timeout))
-                                    {
-                                        Console.WriteLine("Invalid timeout specified. Timeout must be number between {0} and 255.", MINIMUM_TIMEOUT_SETTING);
-                                    }
-                                    else
-                                    {
-                                        if (!int.TryParse(new_timeout, out new_timeout_setting))
-                                        {
-                                            Console.WriteLine("Invalid timeout specified. Timeout must be number between {0} and 255.", MINIMUM_TIMEOUT_SETTING);
-                                        }
-                                        else if (new_timeout_setting < MINIMUM_TIMEOUT_SETTING || new_timeout_setting > 255)
-                                        {
-                                            Console.WriteLine("Invalid timeout value specified. Timeout must be number between {0} and 255.", MINIMUM_TIMEOUT_SETTING);
-                                        }
-                                        else
-                                        {
-                                            Console.WriteLine("New Timeout will be set to: {0}", new_timeout_setting);
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                /* no need to confirm this one; save immediately */
-                                tsb.session_data_.timeout = (byte)new_timeout_setting;
-                                if (!tsb.LastPage_Write())
-                                {
-                                    Console.WriteLine();
-                                    Console.WriteLine("> Error writing bootloader configuration data.");
-                                    errors_encountered = true;
-                                }
+                                tsb.session_data_.timeout = new_user_data.timeout;
+                                request_last_page_write = true;
                                 break;
 
+
                             case CommandLineParser.en_bootloader_operations.WRITE_MAGIC_BYTES:
-                                /* ask the user for the new magic bytes */
-                                string[] s_magic_bytes_names = { "First", "Second" };
+                                tsb.session_data_.magic_bytes[0] = new_user_data.magic_bytes[0];
+                                tsb.session_data_.magic_bytes[1] = new_user_data.magic_bytes[1];
+                                request_last_page_write = true;
+                                break;
 
-                                Console.WriteLine();
-                                Console.WriteLine("Current Magic Bytes are set to [0x{0:X02}] [0x{1:X02}]", tsb.session_data_.magic_bytes[0], tsb.session_data_.magic_bytes[1]);
-
-                                for (byte b = 0; b < 2; b++)
-                                {
-                                    while (true)
-                                    {
-                                        Console.WriteLine();
-                                        Console.WriteLine("Enter the {0} Magic Byte, in HEX format (i.e. '0xA6', type 'A6', omitting the '0x'):", s_magic_bytes_names[b]);
-                                        string magic_byte = Console.ReadLine();
-
-                                        if (string.IsNullOrWhiteSpace(magic_byte))
-                                        {
-                                            Console.WriteLine("Empty Magic Byte specified; setting it to 0xFF");
-                                            magic_byte = "FF";
-                                        }
-
-                                        int mb;
-                                        try
-                                        {
-                                            // based on tips for parsing HEX here https://theburningmonk.com/2010/02/converting-hex-to-int-in-csharp/
-                                            mb = int.Parse(magic_byte, System.Globalization.NumberStyles.HexNumber);
-
-                                            if (mb > 255)
-                                            {
-                                                Console.WriteLine("ERROR: HEX number too big. Magic bytes are of BYTE type in range 0x0 to 0xFF.");
-                                            }
-                                            else
-                                            {
-                                                tsb.session_data_.magic_bytes[b] = (byte)mb;
-                                                break;
-                                            }
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            Console.WriteLine("ERROR: Invalid HEX value. Magic bytes are set in HEX. Example: set to 0xA7, type 'A7' and ommit the '0x' part.");
-                                        }                                            
-                                    }
-                                }
-
-                                /* Save now */
-                                Console.WriteLine("Magic Bytes will be set to: [0x{0:X02}] [0x{1:X02}]", tsb.session_data_.magic_bytes[0], tsb.session_data_.magic_bytes[1]);
-                                if (!tsb.LastPage_Write())
-                                {
-                                    Console.WriteLine();
-                                    Console.WriteLine("> Error writing bootloader configuration data.");
-                                    errors_encountered = true;
-                                }
+                            case CommandLineParser.en_bootloader_operations.PATCH_DAISY_CHAIN_BUG:
+                                request_last_page_write = true; // a simple last page write, applies the patch
                                 break;
 
                             default:
                                 Console.WriteLine("ERROR: Unknown Bootloader operation in function main()");
                                 return RETURN_UNKOWN_OPTION_IN_CASE;
                         }
+                    }
+
+                    // check if there are updated settings in last page, and commit them
+                    if (request_last_page_write)
+                    {
+                        if (!tsb.LastPage_Write())
+                        {
+                            Console.WriteLine();
+                            Console.WriteLine("> Error updating bootloader configuration data.");
+                            Console.WriteLine("> (Daisy chain patch, Timeout, password and/or Magic bytes might not have been updated)");
+                            errors_encountered = true;
+                        }
+                        request_last_page_write = false;
                     }
 
                     tsb.DeactivateBootloader();
@@ -558,9 +330,7 @@ namespace Tsbloader_adv
                     errors_encountered = true;
                 }
             }
-
-
-
+            
             if (errors_encountered)
             {
                 Console.WriteLine();
@@ -581,7 +351,7 @@ namespace Tsbloader_adv
             Console.WriteLine("==================================================================");
             Console.WriteLine("|   Bootloader information   |     Device Information            |");
             Console.WriteLine("==================================================================");
-            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Version  : {0}", tsb.session_data_.buildver), string.Format("Name     : {0}", tsb.session_data_.device_name));
+            Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Version  : {0}({1:X})", tsb.session_data_.builddate, tsb.session_data_.status_buildver), string.Format("Name     : {0}", tsb.session_data_.device_name));
             Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Password : {0}", tsb.session_data_.password),  string.Format("Signature: {0}", tsb.session_data_.device_signature));
             Console.WriteLine(" {0,-28}  {1, -35}", string.Format("Timeout  : {0}", tsb.session_data_.timeout), string.Format("Flash    : {0}b", tsb.session_data_.flash_size));
             Console.WriteLine(" {0,-28}  {1, -35}", string.Format("MagicByte: 0x{0:X02} 0x{1:X02}", tsb.session_data_.magic_bytes[0], tsb.session_data_.magic_bytes[1]),                                       string.Format("Appflash : {0}b", tsb.session_data_.appflash));
@@ -658,7 +428,7 @@ namespace Tsbloader_adv
 
         static string AskQuestion_ToUser(string question)
         {
-            // must use WriteLine, to force a newline, so that the quesiton is sent to the buffered
+            // must use WriteLine, to force a newline, so that the question is sent to the buffered
             // app in case we're redirecting the output
             Console.WriteLine(question);
             return Console.ReadLine();

@@ -11,11 +11,15 @@ Public Class frmGUIFlasher
 
     Private sTSBLoaderEXELocation As String
 
+    Private timeout_sent As Boolean, mbyte1_sent As Boolean, mbyte2_sent As Boolean, new_pwd_sent As Boolean, current_pwd_sent As Boolean
+
     Private WithEvents procTSB As Process
 
     Private Sub frmActuatorFlasher_Load(sender As Object, e As EventArgs) Handles MyBase.Load
 
         FillCommPortList()
+
+        FillMagicBytesList()
 
         Dim apsettings As clsAppSettings
 
@@ -29,6 +33,70 @@ Public Class frmGUIFlasher
         End If
 
 
+
+
+    End Sub
+
+    Private Sub FillMagicBytesList()
+
+        Dim mgbcbo(2) As ComboBox
+        mgbcbo(0) = Me.cboMgByte1
+        mgbcbo(1) = Me.cboMgByte2
+
+        For i As Byte = 0 To 1
+            mgbcbo(i).Items.Clear()
+
+            ' set it up so that we can display text and assign a different value
+            mgbcbo(i).DisplayMember = "Text"
+            mgbcbo(i).ValueMember = "Value"
+
+            If IO.File.Exists(GetMagicByteSuggestionListFileName(i + 1)) Then
+                Dim sFileData As String = My.Computer.FileSystem.ReadAllText(GetMagicByteSuggestionListFileName(i + 1))
+
+                ' replace line endings to be compatible with Win/Linux/MacOs
+                sFileData = sFileData.Replace(vbCrLf, vbCr)
+                sFileData = sFileData.Replace(vbLf, vbCr)
+
+                Dim lines() As String = sFileData.Split(vbCr)
+                Dim errors As String = ""
+
+                For currLineNr As Integer = 0 To lines.Length - 1
+                    lines(currLineNr) = lines(currLineNr).Trim
+
+                    If lines(currLineNr).Length <> 0 Then
+                        ' Sintax:
+                        ' [HEX VALUE without 0x][space]whatever description you want
+                        Dim spaceIx = lines(currLineNr).IndexOf(" ")
+
+                        If spaceIx < 1 Or spaceIx > 2 Then ' no hex value or Hex value too big
+                            errors &= String.Format("Magic Byte {0}, at Line {1}: Hex value is invalid. Hex value must be the first value in the line (whithout the 0x) followed by a space and description. Maximum value shall be FF", i, currLineNr)
+
+                        Else
+                            Dim hexValue As String = lines(currLineNr).Substring(0, spaceIx)
+
+                            ' try parse hex
+                            Dim Hvalue As Integer = 0
+                            If Int16.TryParse(hexValue, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, Hvalue) = False Then
+                                errors &= String.Format("Magic Byte {0}, at Line {1}: Hex value is invalid. Hex value should be specified without the leading 0x, followed by a space and description. Maximum value shall be FF", i, currLineNr)
+
+                            Else
+                                mgbcbo(i).Items.Add(New With {
+                                                    Key .Text = String.Format("{0:X02}:", Hvalue) & lines(currLineNr).Substring(spaceIx),
+                                                    Key .Value = Hvalue
+                                                   })
+                            End If
+                            '(comboBox.SelectedItem as dynamic).Value
+
+                        End If
+
+                    End If
+                Next
+
+                If errors.Length > 0 Then
+                    MsgBox(errors, vbExclamation Or vbOKOnly, "Error loading List of Magic Byte " & i)
+                End If
+            End If
+        Next
     End Sub
 
     Private Sub FillCommPortList()
@@ -62,6 +130,10 @@ Public Class frmGUIFlasher
             If chkTSBMatchPasswordToServoID.Checked Then
                 ' get the last number of the servo ID and assign a letter to the password
                 txtTSBPassword.Text = Chr(CInt(txtServoID.Text) Mod 10 + Asc("A") - 1) ' -1 so that 1 is A
+            End If
+
+            If chkTSBMatchByteToServoID.Checked Then
+                chkTSBMatchByteToServoID_CheckedChanged(Nothing, Nothing)
             End If
         End If
     End Sub
@@ -117,6 +189,10 @@ Public Class frmGUIFlasher
         Return Application.ExecutablePath & ".mysettings"
     End Function
 
+    Private Function GetMagicByteSuggestionListFileName(b_ByteNr As Byte) As String
+        Return Application.ExecutablePath & ".MgByte" & b_ByteNr.ToString & ".list"
+    End Function
+
     Private Sub frmActuatorFlasher_Closing(sender As Object, e As CancelEventArgs) Handles Me.Closing
         Dim apsettings As New clsAppSettings
 
@@ -153,7 +229,6 @@ Public Class frmGUIFlasher
         '    sStdInText &= txtTSBTimeout.Text & vbCrLf
         'End If
 
-
         If Not chkFTDIHasAutoReset.Checked Then
             Dim c As MsgBoxResult = MsgBox("Power cycle the unit and press OK to initiate TSB session.", vbInformation)
         End If
@@ -166,11 +241,13 @@ Public Class frmGUIFlasher
         RunWithRedirect(Me.TSBLoaderExeLocation, sParams)
     End Sub
     Private Function BuildTSBParameters() As String
-        Dim sCommand As String = " -I" ' to that TSB always runs and shows device data even if no action specified
+        Dim sCommand As String = " -I" ' so that TSB always runs and shows device data even if no action specified
+        Dim bMGbyte1 As Integer, bMGbyte2 As Integer
+
 
         If chkTSBConfigureTimeout.Checked Then
             If CInt(txtTSBTimeout.Text) < 50 Then
-                MsgBox("TSB timeout setting is too small. Minimum we allow using the GUI is 50, to keep the bootloader accessible.")
+                MsgBox("TSB timeout setting is too small. Minimum we allow using this GUI is 50, to keep the bootloader accessible.")
                 Return Nothing
             End If
         End If
@@ -195,7 +272,7 @@ Public Class frmGUIFlasher
 
             If chkManipulateEEPROM.Checked Then
                 If Not IsNumeric(txtHexAddress.Text) Then
-                    MsgBox("Can't manipulate EEPROM! The HEX address to manipulate is invalid.", vbCritical)
+                    MsgBox("Can't manipulate EEPROM! The HEX address to manipulate is invalid (must be specified in Decimal).", vbCritical)
                     Return Nothing
                 End If
 
@@ -220,16 +297,36 @@ Public Class frmGUIFlasher
             End If
         End If
 
+
+
+
+        Dim bXOPParam_Inserted As Boolean = False
         If chkTSBConfigurePassword.Checked Then
-            sCommand &= " -xop=p"
+            If Not bXOPParam_Inserted Then sCommand &= " -xop=" : bXOPParam_Inserted = True
+            sCommand &= "p"
         End If
 
         If chkTSBConfigureTimeout.Checked Then
-            If Not chkTSBConfigurePassword.Checked Then
-                sCommand &= " -xop=t"
-            Else
-                sCommand &= "t"
+            If Not bXOPParam_Inserted Then sCommand &= " -xop=" : bXOPParam_Inserted = True
+            sCommand &= "t"
+        End If
+
+        If chkConfigureMagicBytes.Checked Then
+            bMGbyte1 = GetMagicByteValue(cboMgByte1)
+            bMGbyte2 = GetMagicByteValue(cboMgByte2)
+
+            If bMGbyte1 < 0 Or bMGbyte1 > &HFF Then
+                MsgBox("Value of Magic Byte 1 is Invalid.", vbExclamation)
+                Return Nothing
             End If
+
+            If bMGbyte2 < 0 Or bMGbyte2 > &HFF Then
+                MsgBox("Value of Magic Byte 2 is Invalid.", vbExclamation)
+                Return Nothing
+            End If
+
+            If Not bXOPParam_Inserted Then sCommand &= " -xop=" : bXOPParam_Inserted = True
+            sCommand &= "m"
         End If
 
         sCommand &= " " & txtTSBAdditionalParams.Text
@@ -256,7 +353,18 @@ Public Class frmGUIFlasher
         End If
         cmdArgs &= " -port=" & cboCOMMPort.Text
 
-        UpdateTextBox(vbCrLf & "----")
+
+        ' clear text box
+        rtfStatus.Clear()
+
+        ' clear all status control flags
+        timeout_sent = False
+        mbyte1_sent = False
+        mbyte2_sent = False
+        new_pwd_sent = False
+        current_pwd_sent = False
+
+        'UpdateTextBox(vbCrLf & "----")
         UpdateTextBox("Running TSB Command: " & cmdExename & " " & cmdArgs)
 
         procTSB = New Process()
@@ -312,14 +420,38 @@ Public Class frmGUIFlasher
             rtfStatus.SelectionStart = rtfStatus.TextLength
             rtfStatus.ScrollToCaret()
 
-            If txt.Contains("new Password") And chkTSBConfigurePassword.Checked Then procTSB.StandardInput.Write(txtTSBPassword.Text & vbCrLf & "y" & vbCrLf)
-            If txt.Contains("new Timeout") And chkTSBConfigureTimeout.Checked Then procTSB.StandardInput.Write(txtTSBTimeout.Text & vbCrLf)
+            If (Not new_pwd_sent) And (rtfStatus.Text.Contains("new Password") Or rtfStatus.Text.Contains("_new_ Password")) And chkTSBConfigurePassword.Checked Then
+                procTSB.StandardInput.Write(txtTSBPassword.Text & vbCrLf)
 
-            ' the question for entering the password changed from TSBloader_adv.exe v1.0.6 onwards
+                If rtfStatus.Text.Contains("new Password") Then ' old style where we double confirm, so we need to send a "Y enter"
+                    procTSB.StandardInput.Write("y" & vbCrLf)
+                End If
+                new_pwd_sent = True
+            End If
+
+            If (Not timeout_sent) And rtfStatus.Text.Contains("new Timeout") And chkTSBConfigureTimeout.Checked Then
+                procTSB.StandardInput.Write(txtTSBTimeout.Text & vbCrLf)
+                timeout_sent = True
+            End If
+
+            If (Not mbyte1_sent) And rtfStatus.Text.Contains("First Magic Byte") And chkConfigureMagicBytes.Checked Then
+                procTSB.StandardInput.Write(Conversion.Hex(GetMagicByteValue(cboMgByte1)) & vbCrLf)
+                mbyte1_sent = True
+            End If
+
+            If (Not mbyte2_sent) And rtfStatus.Text.Contains("Second Magic Byte") And chkConfigureMagicBytes.Checked Then
+                procTSB.StandardInput.Write(Conversion.Hex(GetMagicByteValue(cboMgByte2)) & vbCrLf)
+                mbyte2_sent = True
+            End If
+
+            ' the question for entering the password changed in different Command line versions
             ' we check both for compatibility with the older and newer versions
-            If txt.Contains("enter the bootloader password") Or txt.Contains("Would you like to enter a bootloader password?") Then
-                Dim sBootldrPwd = InputBox("The bootloader on the device appears to have a password." & vbCrLf & "Please enter the Bootloader password:")
+            If (Not current_pwd_sent) And (rtfStatus.Text.Contains("enter the bootloader password") Or
+                rtfStatus.Text.Contains("Would you like to enter a bootloader password?") Or
+                rtfStatus.Text.Contains("_current_ bootloader password")) Then
+                Dim sBootldrPwd = InputBox("The bootloader on the device appears to have a password." & vbCrLf & "Please enter the Bootloader password: ")
                 procTSB.StandardInput.Write(sBootldrPwd & vbCrLf)
+                current_pwd_sent = True
             End If
 
         End If
@@ -392,6 +524,9 @@ Public Class frmGUIFlasher
             ' remove all quotes
             txtFlashFile.Text = txtFlashFile.Text.Replace("""", String.Empty)
         End If
+
+        ' verify magic byte matching
+        cboMgByte_TextChanged(cboMgByte1, Nothing)
     End Sub
 
     Private Sub cmdBrowseFlashFile_Click(sender As Object, e As EventArgs) Handles cmdBrowseFlashFile.Click
@@ -425,6 +560,139 @@ Public Class frmGUIFlasher
         Dim s As String = GetFileNameToOpen("Select EEPROM File", "Binary Files (*.bin)|*.bin|All files|*.*", txtEEPROMFile.Text)
 
         If Not s Is Nothing Then txtEEPROMFile.Text = s
+    End Sub
+
+    Private Function GetMagicByteValue(MgByteCombo As ComboBox) As Integer
+        Dim value As Integer
+
+        Try
+            value = MgByteCombo.SelectedItem.Value
+        Catch ex As Exception
+            ' value is likely nothing that has been selected
+            ' see if we have text
+            If MgByteCombo.Text <> "" Then
+                If Int16.TryParse(MgByteCombo.Text, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, value) = False Then
+                    ' also not a hex string
+                    Return -1
+
+                    'else
+                    ' fallthrough; in TryParse we have filled the contents of variable VALUE
+                End If
+
+            Else
+                Return -1
+            End If
+        End Try
+
+        Return IIf(value >= 0 And value <= 255, value, -1)
+    End Function
+
+    Private Sub chkConfigureMagicBytes_CheckedChanged(sender As Object, e As EventArgs) Handles chkConfigureMagicBytes.CheckedChanged
+        cboMgByte1.Enabled = chkConfigureMagicBytes.Checked
+        cboMgByte2.Enabled = chkConfigureMagicBytes.Checked
+        chkTSBMatchByteToServoID.Enabled = chkConfigureMagicBytes.Checked
+
+        ' force checking the values and setting colours to flag any errors
+        cboMgByte_TextChanged(cboMgByte1, Nothing)
+        cboMgByte_TextChanged(cboMgByte2, Nothing)
+        chkTSBMatchByteToServoID_CheckedChanged(Nothing, Nothing)
+
+    End Sub
+
+    Private Sub cboMgByte_TextChanged(sender As Object, e As EventArgs) Handles cboMgByte1.TextChanged, cboMgByte2.TextChanged
+
+        If chkConfigureMagicBytes.Checked = False Then
+            lblMgByte1.ForeColor = SystemColors.ControlText
+            lblMgByte2.ForeColor = SystemColors.ControlText
+            Return
+        End If
+
+        Dim iValue As Object = GetMagicByteValue(CType(sender, ComboBox))
+
+        If GetMagicByteValue(CType(sender, ComboBox)) < 0 Then
+            CType(sender, ComboBox).ForeColor = Color.Red
+
+        Else
+            CType(sender, ComboBox).ForeColor = SystemColors.ControlText
+        End If
+
+        ' in the case of Magic Byte 1 check to see if there are any clues about the servo model and the
+        ' name of the flash file to crrelate them and check for errors
+        If sender Is cboMgByte1 Then
+
+            If cboMgByte1.Text.Contains("DES") Then
+                ' determine model
+                Dim i = cboMgByte1.Text.IndexOf("DES") + 3 ' +3 so that we get to the letter right after the S
+
+                Dim model As String = ""
+                Dim c As Char
+                While i < cboMgByte1.Text.Length
+                    c = cboMgByte1.Text.ElementAt(i)
+
+                    If c = " " Then
+                        i = i + 1
+                    ElseIf IsNumeric(c) Then
+                        model = model & c
+                        i = i + 1
+                    Else
+                        Exit While
+                    End If
+                End While
+
+                If model.Length = 0 Then Return
+
+                If txtFlashFile.Text.Contains(model) Then
+                    ' we're ok; do nothing
+                    lblMgByte1.ForeColor = SystemColors.ControlText
+                    Return
+
+                Else
+                    If model.Length = 3 Then ' check using the last 2 chars
+                        If txtFlashFile.Text.Contains(model.Substring(0, 2)) Then
+                            'we're ok.
+                            lblMgByte1.ForeColor = SystemColors.ControlText
+                            Return
+                        End If
+                    End If
+                End If
+
+                ' fall through
+                lblMgByte1.ForeColor = Color.Red
+            End If
+        End If
+
+        If sender Is cboMgByte2 And Not cboMgByte2.SelectedItem Is Nothing Then
+            Dim servoID As Integer = CInt(Me.txtServoID.Text) Mod 10
+            If cboMgByte2.SelectedItem.Value = servoID Then
+                lblMgByte2.ForeColor = SystemColors.ControlText
+                Return
+            End If
+
+            ' fall through; not found
+            lblMgByte2.ForeColor = Color.Red
+        End If
+    End Sub
+
+    Private Sub chkTSBMatchByteToServoID_CheckedChanged(sender As Object, e As EventArgs) Handles chkTSBMatchByteToServoID.CheckedChanged
+
+        If chkTSBMatchByteToServoID.Checked Then
+            cboMgByte2.Enabled = False
+
+            Dim servoID As Integer = CInt(Me.txtServoID.Text) Mod 10
+            For i As Integer = 0 To cboMgByte2.Items.Count - 1
+                If cboMgByte2.Items(i).Value = servoID Then
+                    cboMgByte2.SelectedIndex = i
+                    lblMgByte2.ForeColor = SystemColors.ControlText
+                    Return
+                End If
+            Next
+
+            ' fall through; not found
+            lblMgByte2.ForeColor = Color.Red
+
+        Else
+            cboMgByte2.Enabled = chkConfigureMagicBytes.Checked
+        End If
     End Sub
 End Class
 

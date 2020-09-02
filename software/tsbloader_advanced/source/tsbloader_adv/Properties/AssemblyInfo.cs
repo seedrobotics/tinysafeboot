@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyTitle("Tinysafeboot Advanced Loader Tool")]
 [assembly: AssemblyDescription("Advanced tool for interacting with the Tinysafeboot bootloader")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Seed Robotics Ltd")]
+[assembly: AssemblyCompany("Seed Cognitiva - Robotics Innovation, Lda")]
 [assembly: AssemblyProduct("Tinysafeboot Advanced Loader Tool")]
 [assembly: AssemblyCopyright("GPL V3")]
 [assembly: AssemblyTrademark("")]
@@ -32,5 +32,5 @@ using System.Runtime.InteropServices;
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("0.1.0.8")]
-[assembly: AssemblyFileVersion("0.1.0.8")]
+[assembly: AssemblyVersion("0.1.0.9")]
+[assembly: AssemblyFileVersion("0.1.0.9")]

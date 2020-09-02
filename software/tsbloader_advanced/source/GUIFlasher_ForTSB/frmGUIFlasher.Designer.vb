@@ -44,6 +44,12 @@ Partial Class frmGUIFlasher
         Me.chkEEPROMFile = New System.Windows.Forms.CheckBox()
         Me.chkFlashFile = New System.Windows.Forms.CheckBox()
         Me.Panel3 = New System.Windows.Forms.Panel()
+        Me.chkTSBMatchByteToServoID = New System.Windows.Forms.CheckBox()
+        Me.cboMgByte2 = New System.Windows.Forms.ComboBox()
+        Me.cboMgByte1 = New System.Windows.Forms.ComboBox()
+        Me.lblMgByte2 = New System.Windows.Forms.Label()
+        Me.lblMgByte1 = New System.Windows.Forms.Label()
+        Me.chkConfigureMagicBytes = New System.Windows.Forms.CheckBox()
         Me.txtTSBAdditionalParams = New System.Windows.Forms.TextBox()
         Me.Label4 = New System.Windows.Forms.Label()
         Me.txtTSBTimeout = New System.Windows.Forms.TextBox()
@@ -224,6 +230,12 @@ Partial Class frmGUIFlasher
         Me.Panel3.Anchor = CType(((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Left) _
             Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.Panel3.BackColor = System.Drawing.Color.White
+        Me.Panel3.Controls.Add(Me.chkTSBMatchByteToServoID)
+        Me.Panel3.Controls.Add(Me.cboMgByte2)
+        Me.Panel3.Controls.Add(Me.cboMgByte1)
+        Me.Panel3.Controls.Add(Me.lblMgByte2)
+        Me.Panel3.Controls.Add(Me.lblMgByte1)
+        Me.Panel3.Controls.Add(Me.chkConfigureMagicBytes)
         Me.Panel3.Controls.Add(Me.txtTSBAdditionalParams)
         Me.Panel3.Controls.Add(Me.Label4)
         Me.Panel3.Controls.Add(Me.txtTSBTimeout)
@@ -234,14 +246,71 @@ Partial Class frmGUIFlasher
         Me.Panel3.Controls.Add(Me.chkTSBConfigureTimeout)
         Me.Panel3.Location = New System.Drawing.Point(12, 218)
         Me.Panel3.Name = "Panel3"
-        Me.Panel3.Size = New System.Drawing.Size(1005, 144)
+        Me.Panel3.Size = New System.Drawing.Size(1005, 220)
         Me.Panel3.TabIndex = 4
+        '
+        'chkTSBMatchByteToServoID
+        '
+        Me.chkTSBMatchByteToServoID.AutoSize = True
+        Me.chkTSBMatchByteToServoID.Enabled = False
+        Me.chkTSBMatchByteToServoID.Location = New System.Drawing.Point(500, 128)
+        Me.chkTSBMatchByteToServoID.Name = "chkTSBMatchByteToServoID"
+        Me.chkTSBMatchByteToServoID.Size = New System.Drawing.Size(186, 21)
+        Me.chkTSBMatchByteToServoID.TabIndex = 31
+        Me.chkTSBMatchByteToServoID.Text = "Match Byte 2 to Servo ID"
+        Me.chkTSBMatchByteToServoID.UseVisualStyleBackColor = True
+        '
+        'cboMgByte2
+        '
+        Me.cboMgByte2.Enabled = False
+        Me.cboMgByte2.FormattingEnabled = True
+        Me.cboMgByte2.Location = New System.Drawing.Point(345, 125)
+        Me.cboMgByte2.Name = "cboMgByte2"
+        Me.cboMgByte2.Size = New System.Drawing.Size(142, 24)
+        Me.cboMgByte2.TabIndex = 30
+        '
+        'cboMgByte1
+        '
+        Me.cboMgByte1.Enabled = False
+        Me.cboMgByte1.FormattingEnabled = True
+        Me.cboMgByte1.Location = New System.Drawing.Point(126, 124)
+        Me.cboMgByte1.Name = "cboMgByte1"
+        Me.cboMgByte1.Size = New System.Drawing.Size(142, 24)
+        Me.cboMgByte1.TabIndex = 29
+        '
+        'lblMgByte2
+        '
+        Me.lblMgByte2.AutoSize = True
+        Me.lblMgByte2.Location = New System.Drawing.Point(274, 128)
+        Me.lblMgByte2.Name = "lblMgByte2"
+        Me.lblMgByte2.Size = New System.Drawing.Size(70, 17)
+        Me.lblMgByte2.TabIndex = 28
+        Me.lblMgByte2.Text = "Byte 2: 0x"
+        '
+        'lblMgByte1
+        '
+        Me.lblMgByte1.AutoSize = True
+        Me.lblMgByte1.Location = New System.Drawing.Point(56, 128)
+        Me.lblMgByte1.Name = "lblMgByte1"
+        Me.lblMgByte1.Size = New System.Drawing.Size(70, 17)
+        Me.lblMgByte1.TabIndex = 27
+        Me.lblMgByte1.Text = "Byte 1: 0x"
+        '
+        'chkConfigureMagicBytes
+        '
+        Me.chkConfigureMagicBytes.AutoSize = True
+        Me.chkConfigureMagicBytes.Location = New System.Drawing.Point(15, 100)
+        Me.chkConfigureMagicBytes.Name = "chkConfigureMagicBytes"
+        Me.chkConfigureMagicBytes.Size = New System.Drawing.Size(244, 21)
+        Me.chkConfigureMagicBytes.TabIndex = 25
+        Me.chkConfigureMagicBytes.Text = "Configure Bootloader Magic Bytes"
+        Me.chkConfigureMagicBytes.UseVisualStyleBackColor = True
         '
         'txtTSBAdditionalParams
         '
         Me.txtTSBAdditionalParams.Anchor = CType(((System.Windows.Forms.AnchorStyles.Top Or System.Windows.Forms.AnchorStyles.Left) _
             Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
-        Me.txtTSBAdditionalParams.Location = New System.Drawing.Point(198, 101)
+        Me.txtTSBAdditionalParams.Location = New System.Drawing.Point(198, 174)
         Me.txtTSBAdditionalParams.Name = "txtTSBAdditionalParams"
         Me.txtTSBAdditionalParams.Size = New System.Drawing.Size(744, 22)
         Me.txtTSBAdditionalParams.TabIndex = 24
@@ -249,7 +318,7 @@ Partial Class frmGUIFlasher
         'Label4
         '
         Me.Label4.AutoSize = True
-        Me.Label4.Location = New System.Drawing.Point(12, 104)
+        Me.Label4.Location = New System.Drawing.Point(12, 177)
         Me.Label4.Name = "Label4"
         Me.Label4.Size = New System.Drawing.Size(178, 17)
         Me.Label4.TabIndex = 23
@@ -266,7 +335,7 @@ Partial Class frmGUIFlasher
         '
         Me.chkTSBMatchPasswordToServoID.AutoSize = True
         Me.chkTSBMatchPasswordToServoID.Enabled = False
-        Me.chkTSBMatchPasswordToServoID.Location = New System.Drawing.Point(247, 65)
+        Me.chkTSBMatchPasswordToServoID.Location = New System.Drawing.Point(223, 72)
         Me.chkTSBMatchPasswordToServoID.Name = "chkTSBMatchPasswordToServoID"
         Me.chkTSBMatchPasswordToServoID.Size = New System.Drawing.Size(204, 21)
         Me.chkTSBMatchPasswordToServoID.TabIndex = 21
@@ -276,15 +345,15 @@ Partial Class frmGUIFlasher
         'txtTSBPassword
         '
         Me.txtTSBPassword.Enabled = False
-        Me.txtTSBPassword.Location = New System.Drawing.Point(198, 63)
+        Me.txtTSBPassword.Location = New System.Drawing.Point(161, 70)
         Me.txtTSBPassword.Name = "txtTSBPassword"
-        Me.txtTSBPassword.Size = New System.Drawing.Size(43, 22)
+        Me.txtTSBPassword.Size = New System.Drawing.Size(58, 22)
         Me.txtTSBPassword.TabIndex = 20
         '
         'Label5
         '
         Me.Label5.AutoSize = True
-        Me.Label5.Location = New System.Drawing.Point(130, 66)
+        Me.Label5.Location = New System.Drawing.Point(93, 72)
         Me.Label5.Name = "Label5"
         Me.Label5.Size = New System.Drawing.Size(69, 17)
         Me.Label5.TabIndex = 19
@@ -293,7 +362,7 @@ Partial Class frmGUIFlasher
         'chkTSBConfigurePassword
         '
         Me.chkTSBConfigurePassword.AutoSize = True
-        Me.chkTSBConfigurePassword.Location = New System.Drawing.Point(15, 42)
+        Me.chkTSBConfigurePassword.Location = New System.Drawing.Point(13, 48)
         Me.chkTSBConfigurePassword.Name = "chkTSBConfigurePassword"
         Me.chkTSBConfigurePassword.Size = New System.Drawing.Size(216, 21)
         Me.chkTSBConfigurePassword.TabIndex = 18
@@ -344,7 +413,7 @@ Partial Class frmGUIFlasher
         Me.btnTSBLoaderLocation.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Left), System.Windows.Forms.AnchorStyles)
         Me.btnTSBLoaderLocation.BackColor = System.Drawing.Color.MediumAquamarine
         Me.btnTSBLoaderLocation.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.btnTSBLoaderLocation.Location = New System.Drawing.Point(19, 531)
+        Me.btnTSBLoaderLocation.Location = New System.Drawing.Point(19, 653)
         Me.btnTSBLoaderLocation.Name = "btnTSBLoaderLocation"
         Me.btnTSBLoaderLocation.Size = New System.Drawing.Size(215, 38)
         Me.btnTSBLoaderLocation.TabIndex = 9
@@ -356,7 +425,7 @@ Partial Class frmGUIFlasher
         Me.btnRunTSBLoader.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.btnRunTSBLoader.BackColor = System.Drawing.Color.MediumAquamarine
         Me.btnRunTSBLoader.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.btnRunTSBLoader.Location = New System.Drawing.Point(869, 531)
+        Me.btnRunTSBLoader.Location = New System.Drawing.Point(869, 653)
         Me.btnRunTSBLoader.Name = "btnRunTSBLoader"
         Me.btnRunTSBLoader.Size = New System.Drawing.Size(141, 38)
         Me.btnRunTSBLoader.TabIndex = 10
@@ -379,7 +448,7 @@ Partial Class frmGUIFlasher
         Me.cmdKillTSB.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.cmdKillTSB.BackColor = System.Drawing.Color.MediumAquamarine
         Me.cmdKillTSB.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.cmdKillTSB.Location = New System.Drawing.Point(804, 531)
+        Me.cmdKillTSB.Location = New System.Drawing.Point(804, 653)
         Me.cmdKillTSB.Name = "cmdKillTSB"
         Me.cmdKillTSB.Size = New System.Drawing.Size(139, 38)
         Me.cmdKillTSB.TabIndex = 12
@@ -391,7 +460,7 @@ Partial Class frmGUIFlasher
         '
         Me.lblStatus.BackColor = System.Drawing.Color.DimGray
         Me.lblStatus.Dock = System.Windows.Forms.DockStyle.Bottom
-        Me.lblStatus.Location = New System.Drawing.Point(0, 594)
+        Me.lblStatus.Location = New System.Drawing.Point(0, 716)
         Me.lblStatus.Name = "lblStatus"
         Me.lblStatus.Size = New System.Drawing.Size(1041, 21)
         Me.lblStatus.TabIndex = 13
@@ -402,7 +471,7 @@ Partial Class frmGUIFlasher
         Me.btnSeedErosEnable.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.btnSeedErosEnable.BackColor = System.Drawing.Color.MediumAquamarine
         Me.btnSeedErosEnable.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.btnSeedErosEnable.Location = New System.Drawing.Point(695, 531)
+        Me.btnSeedErosEnable.Location = New System.Drawing.Point(695, 653)
         Me.btnSeedErosEnable.Name = "btnSeedErosEnable"
         Me.btnSeedErosEnable.Size = New System.Drawing.Size(93, 28)
         Me.btnSeedErosEnable.TabIndex = 14
@@ -414,7 +483,7 @@ Partial Class frmGUIFlasher
         Me.Label7.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.Label7.AutoSize = True
         Me.Label7.ForeColor = System.Drawing.Color.White
-        Me.Label7.Location = New System.Drawing.Point(565, 536)
+        Me.Label7.Location = New System.Drawing.Point(565, 658)
         Me.Label7.Name = "Label7"
         Me.Label7.Size = New System.Drawing.Size(124, 17)
         Me.Label7.TabIndex = 16
@@ -425,7 +494,7 @@ Partial Class frmGUIFlasher
         Me.btnSeedErosDisable.Anchor = CType((System.Windows.Forms.AnchorStyles.Bottom Or System.Windows.Forms.AnchorStyles.Right), System.Windows.Forms.AnchorStyles)
         Me.btnSeedErosDisable.BackColor = System.Drawing.Color.MediumAquamarine
         Me.btnSeedErosDisable.FlatStyle = System.Windows.Forms.FlatStyle.Flat
-        Me.btnSeedErosDisable.Location = New System.Drawing.Point(695, 558)
+        Me.btnSeedErosDisable.Location = New System.Drawing.Point(695, 680)
         Me.btnSeedErosDisable.Name = "btnSeedErosDisable"
         Me.btnSeedErosDisable.Size = New System.Drawing.Size(93, 28)
         Me.btnSeedErosDisable.TabIndex = 17
@@ -440,10 +509,10 @@ Partial Class frmGUIFlasher
         Me.rtfStatus.BorderStyle = System.Windows.Forms.BorderStyle.None
         Me.rtfStatus.DetectUrls = False
         Me.rtfStatus.Font = New System.Drawing.Font("Consolas", 9.0!, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, CType(0, Byte))
-        Me.rtfStatus.Location = New System.Drawing.Point(12, 373)
+        Me.rtfStatus.Location = New System.Drawing.Point(12, 458)
         Me.rtfStatus.Name = "rtfStatus"
         Me.rtfStatus.ReadOnly = True
-        Me.rtfStatus.Size = New System.Drawing.Size(1005, 141)
+        Me.rtfStatus.Size = New System.Drawing.Size(1005, 178)
         Me.rtfStatus.TabIndex = 18
         Me.rtfStatus.Text = ""
         '
@@ -452,7 +521,7 @@ Partial Class frmGUIFlasher
         Me.AutoScaleDimensions = New System.Drawing.SizeF(8.0!, 16.0!)
         Me.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font
         Me.BackColor = System.Drawing.Color.FromArgb(CType(CType(88, Byte), Integer), CType(CType(89, Byte), Integer), CType(CType(91, Byte), Integer))
-        Me.ClientSize = New System.Drawing.Size(1041, 615)
+        Me.ClientSize = New System.Drawing.Size(1041, 737)
         Me.Controls.Add(Me.rtfStatus)
         Me.Controls.Add(Me.btnSeedErosDisable)
         Me.Controls.Add(Me.Label7)
@@ -512,4 +581,10 @@ Partial Class frmGUIFlasher
     Friend WithEvents cmdBrowseFlashFile As Button
     Friend WithEvents dlgFileOpen As OpenFileDialog
     Friend WithEvents rtfStatus As RichTextBox
+    Friend WithEvents cboMgByte2 As ComboBox
+    Friend WithEvents cboMgByte1 As ComboBox
+    Friend WithEvents lblMgByte2 As Label
+    Friend WithEvents lblMgByte1 As Label
+    Friend WithEvents chkConfigureMagicBytes As CheckBox
+    Friend WithEvents chkTSBMatchByteToServoID As CheckBox
 End Class

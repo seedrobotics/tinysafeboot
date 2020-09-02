@@ -56,7 +56,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CollectUserOptions.cs" />
     <Compile Include="CommandLineParser.cs" />
+    <Compile Include="ErosBridgeMode.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TSBInterfacing.cs" />

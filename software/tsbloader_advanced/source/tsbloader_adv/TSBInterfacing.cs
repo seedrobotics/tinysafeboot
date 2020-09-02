@@ -24,7 +24,7 @@ namespace Tsbloader_adv
 {
     class TSBInterfacing
     {
-        public enum en_processor_type { ATTINY=0, ATMEGA=1 };
+        public enum en_processor_type { ATTINY_OR_ATMEGANOBOOTLDR=0, ATMEGA=1 };
         public enum en_appjump_mode { RELATIVE_JUMP = 0, ABSOLUTE_JUMP=1 };
 
         public enum en_protocol_version { DYNAMIXEL_1=1, DYNAMIXEL_2=2 }
@@ -41,8 +41,8 @@ namespace Tsbloader_adv
         };
 
         public struct str_tsb_session_data {
-            public int buildver;
-            public byte status;
+            public int builddate;
+            public byte status_buildver;
             public string device_signature;
             public string device_name;
             public int pagesize;
@@ -122,60 +122,8 @@ namespace Tsbloader_adv
                 }
             }
 
-            if (serial_port_.IsOpen) { 
-                serial_port_.Close();
-            }
-
-            serial_port_.BaudRate = baud_bps;
-            serial_port_.PortName = port_name;
-            serial_port_.Encoding = Encoding.ASCII;
-
-
-            /* Determine OS
-             * Depending on the OS we need to handle the DTR line (for auto reset)
-             * differently
-             * Mono: seems to require explicit handling of DTR
-             * Windows 10: manupulating DTR after opening has timing issues and occurs
-             * at random time; setting it before opening and then opening seems to
-             * cause the desired behaviour immediately
-             */
-
-            bool is_windows = false;
-            int p = (int)Environment.OSVersion.Platform;
-            is_windows =( (p == 4) || (p == 6) || (p == 128));
-
-            try
-            {
-                // WINDOWS: move DTR Enable setting, so that it's done before the OPEN
-                // to try and see if its behaviour is more consistent
-                if (is_windows) { serial_port_.DtrEnable = true; }
-
-                serial_port_.Open();
-
-                /* Apparently on .Net/Mono we need to manually set the DTR enable flag,
-                 * which is commonly asserted whenever a device connects to a terminal.
-                 * We wish to maintain assertion of DTR on connect in order to support
-                 * Arduino-style autoreset of boards.
-                 *
-                 * On .Net under windows 10, we have had situaitons where explicitly
-                 * calling Enable/Disable would actually result in DTR being asserted out of time
-                 * (maybe USB cahcing issues?)
-                 * Therefore, we moved this to be set before the call to OPEN to see if it resolves the issue */
-
-                if (!is_windows) {
-                    serial_port_.DtrEnable = false;
-
-                    // give it a few MS for the OS driver to execute the request
-                    Thread.Sleep(100);
-
-                    serial_port_.DtrEnable = true;
-                 }
-            }
-            catch (Exception ex)
-            {
-                cb_StatusUpdate(string.Format("Error opening Serial port '{0}':{1}{2}", serial_port_.PortName, Environment.NewLine, ex.Message), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
-                return false;
-            }
+            // open port; fail if unsuccessful
+            if (open_serial_port(port_name, baud_bps) == false) return false;
 
             Thread.Sleep(pre_wait_ms);
 
@@ -219,13 +167,13 @@ namespace Tsbloader_adv
                         }
                         else
                         {
-                            cb_StatusUpdate(string.Format("No reply received from the bootloader.{0}Check if the password is correct, if the device has power and if it has been reset before initiating this command (some may boards auto reset the device).", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                            cb_StatusUpdate(string.Format("{1}No reply received from the bootloader.{0}Check if the password is correct, if the device has power and if it has been reset before initiating this command (some boards auto reset the device automatically).", Environment.NewLine, Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                             return false;
                         }
 
                     } else {
                         /* attempt asking for a password */
-                        bootloader_pwd = cb_RequestDataFromUser(string.Format("No reply from bootloader. Bootloader may be password protected.{0}Please enter the bootloader password: ", Environment.NewLine));
+                        bootloader_pwd = cb_RequestDataFromUser(string.Format("> No reply from bootloader. Bootloader may be password protected.{0}Enter the _current_ bootloader password: ", Environment.NewLine));
 
                         if (bootloader_pwd.Length == 0) {
                             cb_StatusUpdate("No password entered. Ending program.", -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
@@ -406,9 +354,10 @@ namespace Tsbloader_adv
             {
                 cb_StatusUpdate(string.Format("{1}ERROR: Invalid reply from Bootloader. Confirmation character is invalid ('{0}')", reply_buffer[16], Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 cb_StatusUpdate(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate(string.Format("                '{0}'", BitConverter.ToString(reply_buffer, 0, System.Text.Encoding.ASCII.GetString(reply_buffer).Length)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
-            else if (System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3) != "TSB")
+            else if (System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3).ToUpper() != "TSB")
             {
                 cb_StatusUpdate(string.Format("{1}ERROR: Invalid Reply Header ('{0}')", System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3),Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 cb_StatusUpdate(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
@@ -423,8 +372,8 @@ namespace Tsbloader_adv
             /* NOTE: While AVR/Assembler is accounting flash addresses space in WORDS
                 * (except from EEPROM locations), at PC side we are using BYTES 
                 */
-            session_data_.buildver = (int)reply_buffer[3] + (int)reply_buffer[4] * 256;
-            session_data_.status = reply_buffer[5];
+            session_data_.builddate = (int)reply_buffer[3] + (int)reply_buffer[4] * 256;
+            session_data_.status_buildver = reply_buffer[5];
             session_data_.device_signature = string.Format("{0:X2}{1:X2}{2:X2}", reply_buffer[6], reply_buffer[7], reply_buffer[8]);
             session_data_.pagesize = (int)reply_buffer[9] * 2; // WORDS * 2 = BYTES
             session_data_.appflash = ((int)reply_buffer[10] + ((int)reply_buffer[11]) * 256) * 2; // WORDS * 2 = BYTES
@@ -448,14 +397,14 @@ namespace Tsbloader_adv
             }
 
             /* check if it's the TSB firmware with new date identifier and status byte */
-            if (session_data_.buildver < 32768)
+            if (session_data_.builddate < 32768)
             {
-                session_data_.buildver = (session_data_.buildver & 31) + ((session_data_.buildver & 480) / 32) * 100 +
-                                            ((session_data_.buildver & 65024) / 512) * 10000 + 20000000;
+                session_data_.builddate = (session_data_.builddate & 31) + ((session_data_.builddate & 480) / 32) * 100 +
+                                            ((session_data_.builddate & 65024) / 512) * 10000 + 20000000;
 
             }
             else { /* old date encoding in tsb-fw (three bytes) */
-                session_data_.buildver = session_data_.buildver + 65536 + 20000000;
+                session_data_.builddate = session_data_.builddate + 65536 + 20000000;
             }
 
             /* detect device type and appjump mode */
@@ -463,12 +412,12 @@ namespace Tsbloader_adv
             {
                 case 0x00:
                     session_data_.jump_mode = en_appjump_mode.RELATIVE_JUMP;
-                    session_data_.processor_type = en_processor_type.ATTINY;
+                    session_data_.processor_type = en_processor_type.ATTINY_OR_ATMEGANOBOOTLDR;
                     break;
 
                 case 0x0c:
                     session_data_.jump_mode = en_appjump_mode.ABSOLUTE_JUMP;
-                    session_data_.processor_type = en_processor_type.ATTINY;
+                    session_data_.processor_type = en_processor_type.ATTINY_OR_ATMEGANOBOOTLDR;
                     break;
 
                 case 0xaa:
@@ -509,6 +458,8 @@ namespace Tsbloader_adv
          *******************************/
         public bool LastPage_Read()
         {
+            System.Diagnostics.Debug.WriteLine("Call to LastPageRead " + System.DateTime.Now.ToString());
+
             byte[] reply_buff = new byte[256];
 
             cb_StatusUpdate("Reading boootloader configuration data... ", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
@@ -533,12 +484,13 @@ namespace Tsbloader_adv
                     return false;
                 } else
                 {
-                    //DEBUG: Console.Write(string.Format("Repeating LastPageRead. b is {0}, result is {1}//", b, result));
+                    //DEBUG: Console.Write(string.Format("Repeating LastPageRead. b is {0}, result is {1}//", b, result));                    
                 }
 
                 if (result == true) /* only mess with the menu if we know we got a proper reply */
                 {
                     tsb_replied = return_to_tsbmainparser();
+                    break;
                 }
             }
 
@@ -547,7 +499,7 @@ namespace Tsbloader_adv
 
             /* get the data from the byte array */
             session_data_.appjump_address = (int)reply_buff[0] + ((int)reply_buff[1] * 256);
-            if (session_data_.processor_type == en_processor_type.ATMEGA) session_data_.appjump_address = 0x0;
+            //if (session_data_.processor_type == en_processor_type.ATMEGA) session_data_.appjump_address = 0x0;
 
             session_data_.timeout = reply_buff[2];
 
@@ -875,7 +827,7 @@ namespace Tsbloader_adv
             {
                 cb_StatusUpdate("Flash read complete. Processing read data... ", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
 
-                /* remove empty/erased pages */
+                /* remove empty/erased pages at the top of FLASH */
                 int curr_ix = nr_bytes_returned - 1;
                 while (curr_ix >= 0)
                 {
@@ -894,7 +846,7 @@ namespace Tsbloader_adv
                  * (original reset vector calculated from from appjump in LASTPAGE) */
                 if (nr_bytes_returned > 0)
                 {
-                    if (session_data_.processor_type == en_processor_type.ATTINY)
+                    if (session_data_.processor_type == en_processor_type.ATTINY_OR_ATMEGANOBOOTLDR)
                     {
                         if (session_data_.jump_mode == en_appjump_mode.RELATIVE_JUMP)
                         {
@@ -958,7 +910,7 @@ namespace Tsbloader_adv
             }
 
             if (SPM_instructions_present_in_largebuffer(nr_bytes_infile) && 
-                session_data_.processor_type == en_processor_type.ATTINY)
+                session_data_.processor_type == en_processor_type.ATTINY_OR_ATMEGANOBOOTLDR)
             {
                 cb_StatusUpdate("WARNING: The firmware you are about to upload", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
                 cb_StatusUpdate("contains the SPM opcode that performs direct flash writes.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
@@ -995,7 +947,7 @@ namespace Tsbloader_adv
 
             if (string.IsNullOrEmpty(flash_filename))
             {
-                cb_StatusUpdate(string.Format("ERROR{0}No valid filename specified. Please specify the filename to load the Flash data.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate(string.Format("ERROR{0}No valid filename specified. Please specify the filename to use for verifying the Flash data.", Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
                 return false;
             }
 
@@ -1034,7 +986,7 @@ namespace Tsbloader_adv
                 {
                     /* compare manually byte by byte */
                     byte b;
-                    if (first_page && session_data_.processor_type == en_processor_type.ATTINY)
+                    if (first_page && session_data_.processor_type == en_processor_type.ATTINY_OR_ATMEGANOBOOTLDR)
                     {
                         /* on ATTINY ignore the first 4 bytes, which are modified for APPJump */
                         b = 4; first_page = false;
@@ -1156,7 +1108,7 @@ namespace Tsbloader_adv
              * The bootloader responds with REQUEST and we send a CONFIRM
              */
 
-            cb_StatusUpdate("Performing Emergency Erase... ", 0, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
+            cb_StatusUpdate("Performing Emergency Erase... ", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
 
             /* Because in an Emergency Erase can't Activate the Bootloader, we must go through the
                process of opening the port and sending the activating chars manually */
@@ -1166,32 +1118,8 @@ namespace Tsbloader_adv
                 return false;
             }
 
-            if (serial_port_.IsOpen)
-            {
-                serial_port_.Close();
-            }
-
-            serial_port_.BaudRate = baud_bps;
-            serial_port_.PortName = port_name;
-            serial_port_.Encoding = Encoding.ASCII;
-
-            try
-            {
-                serial_port_.Open();
-
-                /* Apparently on .Net/Mono we need to manually set the DTR enable flag,
-                 * which is commonly asserted whenever a device connects to a terminal.
-                 * The internal Reset of the Seed Eros boards is dependent on this behaviour
-                 * of DTR so, for the sake of honouring the "typical" behaviour
-                 * we will assert it on connect and de-assert it on disconnect
-                 */
-                serial_port_.DtrEnable = true;
-            }
-            catch (Exception ex)
-            {
-                cb_StatusUpdate(string.Format("ERROR{1}Error opening Serial port '{0}':{2}", serial_port_.PortName, Environment.NewLine, ex.Message), -1, true,  en_cb_status_update_lineending.CBSU_NEWLINE);
-                return false;
-            }
+            // open port; fail if unsuccessful
+            if (open_serial_port(port_name, baud_bps) == false) return false;
 
             Thread.Sleep(pre_wait_ms);
 
@@ -1200,7 +1128,9 @@ namespace Tsbloader_adv
              */
             if (serial_port_.BytesToRead > 0)
             {
-                cb_StatusUpdate(string.Format("< {0}", serial_port_.ReadExisting().ToString().Replace("\n", "\n< ")), 0, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                // if there is data left in the buffer, write a newline to properly align things
+                cb_StatusUpdate("", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate(string.Format("< {0}", serial_port_.ReadExisting().ToString().Replace("\n", "\n< ")), -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             }
 
 
@@ -1295,7 +1225,7 @@ namespace Tsbloader_adv
                 }
             }
 
-            cb_StatusUpdate("Done", 100, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE);
+            cb_StatusUpdate("Performing Emergency Erase... Done", 100, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL_AND_NEWLINE);
             cb_StatusUpdate("Emergency Erase complete.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             return true;
         }
@@ -1318,17 +1248,19 @@ namespace Tsbloader_adv
         private bool read_page_from_device(ref byte[] buff)
         {
             /* we can't be sending the CONFIRM signal to pull page here because
-             * the ReadLast page doesn't use it; we just send a "c" and pull the whole page
+             * the ReadLast page doesn't use it; for LastPageRead we just send a "c" and pull the whole page
              * The CONFIRM signal is only used in multipage reads; so it should be sent
              * only from the routine that does the multipage reads */
             wait_for_reply(command_reply_timeout_ms, session_data_.pagesize);
 
             if (serial_port_.BytesToRead < session_data_.pagesize)
             {
-                cb_StatusUpdate(string.Format("ERROR{1}Received an incomplete page ({0} bytes)", serial_port_.BytesToRead, Environment.NewLine), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate(string.Format("ERROR{1}Received an incomplete page (received {0}, expected {2} bytes)", serial_port_.BytesToRead, Environment.NewLine, session_data_.pagesize), -1,true,   en_cb_status_update_lineending.CBSU_NEWLINE);
 
                 /* pull whatever bytes there are so that they won't be disturbing/offseting further reads */
                 serial_port_.Read(buff, 0, serial_port_.BytesToRead);
+                cb_StatusUpdate(string.Format("Page contents {0}", BitConverter.ToString(buff)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+
                 return false;
             }
             else
@@ -1907,8 +1839,71 @@ namespace Tsbloader_adv
         }
 
 
+        private bool open_serial_port(string port_name, int baud_bps)
+        {
+            if (serial_port_.IsOpen)
+            {
+                serial_port_.Close();
+            }
+
+            serial_port_.BaudRate = baud_bps;
+            serial_port_.PortName = port_name;
+            serial_port_.Encoding = Encoding.ASCII;
+
+
+            /* Determine OS
+             * Depending on the OS we need to handle the DTR line (for auto reset)
+             * differently
+             * Mono: seems to require explicit handling of DTR
+             * Windows 10: manupulating DTR after opening has timing issues and occurs
+             * at random time; setting it before opening and then opening seems to
+             * cause the desired behaviour immediately
+             */
+
+            bool is_windows = false;
+            PlatformID p = Environment.OSVersion.Platform;
+            is_windows = false; // ( (p == PlatformID.Win32NT) || (p == PlatformID.Win32Windows) || (p == PlatformID.Win32S));
+
+            try
+            {
+                // WINDOWS: move DTR Enable setting, so that it's done before the OPEN
+                // to try and see if its behaviour is more consistent
+                if (is_windows) { serial_port_.DtrEnable = true; }
+
+                serial_port_.Open();
+
+                /* Apparently on .Net/Mono we need to manually set the DTR enable flag,
+                 * which is commonly asserted whenever a device connects to a terminal.
+                 * We wish to maintain assertion of DTR on connect in order to support
+                 * Arduino-style autoreset of boards.
+                 *
+                 * On .Net under windows 10, we have had situations where explicitly
+                 * calling Enable/Disable would actually result in DTR being asserted out of time
+                 * (maybe USB caching issues?)
+                 * Therefore, we moved this to be set before the call to OPEN to see if it resolves the issue */
+
+                if (!is_windows)
+                {
+                    serial_port_.DtrEnable = false;
+
+                    // give it a few MS for the OS driver to execute the request
+                    Thread.Sleep(100);
+
+                    serial_port_.DtrEnable = true;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                cb_StatusUpdate(string.Format("Error opening Serial port '{0}':{1}{2}", serial_port_.PortName, Environment.NewLine, ex.Message), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                return false;
+            }
+        }       
+
+
         private static void fill_devicenames(ref Dictionary<string,string> device_names) {
-            /* manually built a dictonary with the mapping fromt he device ID to device name */
+            /* manually build a dictonary with the mapping from the device ID to device name */
             device_names.Add("1E9001", "1200");
             device_names.Add("1E9101", "2313");
             device_names.Add("1E9102", "2323");
@@ -1932,6 +1927,7 @@ namespace Tsbloader_adv
             device_names.Add("1E9407", "ATmega165P[A]");
             device_names.Add("1E9406", "ATmega168[A]");
             device_names.Add("1E940B", "ATmega168P[A]");
+            device_names.Add("1E9415", "ATmega168PB");
             device_names.Add("1E9411", "ATmega169A");
             device_names.Add("1E9405", "ATmega169P[A]");
             device_names.Add("1E9403", "ATmega16[A]");
@@ -1984,6 +1980,7 @@ namespace Tsbloader_adv
             device_names.Add("1E9308", "ATmega8535");
             device_names.Add("1E930A", "ATmega88[A]");
             device_names.Add("1E930F", "ATmega88P[A]");
+            device_names.Add("1E9316", "ATmega88PB");
             device_names.Add("1E9307", "ATmega8[A]");
             device_names.Add("1E9310", "ATmega8HVA");
             device_names.Add("1E9389", "ATmega8U2");

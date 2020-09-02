@@ -9,15 +9,25 @@ In this repository, we publish our changes and improvements made to TSB. We have
 <ul>
 <li><b>firmware_ASM/original_FW</b>: includes the firmware part to be installed on the ATMEGA and ATTINY devices using ICSP, originally written by Julien Thomas.<br/>
 This implementation has a bug when operating in Daisy chain (multiple devices connected in parallel). See issue #1</li>
-<li><b>firmware_ASM/release_20170626</b>: bugfix for issue #1 in the tracker (inherited from Julian's code).</li>
+
+<li><b>firmware_ASM/latest_stable_release/20170626-autobaud</b>: bugfix for issue #1 in the tracker (inherited from Julian's code).</li>
+
+<li><b>firmware_ASM/latest_stable_release/20200727-fixedbaud</b>: Communication routines are rewritten to use the processor's native UART. It is the prefered version where using the native UART is a possibility as it includes may improvements. Open the folder <b>latest_stable_release</b> and see the README for more information.</li>
+
 <li><b>software/tsb_loader_original</b>: the original TSB Loader (PC software) written by Julien Thomas in FreeBasic.<br/>
 You can use this program to produce TSB binaries for your processor without needing to use an ATMEL assembler.<br/>
 If using this tool to read code from your processor, beware that it has a bug when saving to BIN files 
 (it won't save the last byte); save to Intel HEX instead which does not have this issue.<br>
-Version produced by the tool also have the Daisy chain/Password escape bug. Beware!</li>
-<li><b>software/tsb_loader2</b>: our completely re written TSB loader in Mono (C#) for cross platform compatibility.<br/>
+Binary versions produced by the tool also have the Daisy chain/Password escape bug and are of the Autobauding variant. Beware!</li>
+
+<li><b>software/tsbloader_advanced</b>: our completely re written TSB loader in Mono (C#) for cross platform compatibility.<br/>
 This new loader has several advantages:
-<ul><li>You can specify the device Activation password on the command line (actually several individual passwords, if you are on a Daisy chain), thus eliminating the timeout you had in the original version before you could enter the password</li>
+<ul>
+<li><b>NEW for the 20170626-autobaud version of the firmware</b>: due to the communication timeout implemented in this version, it is recommended to use tsbloader_adv version 1.0.9 or higher<br/>
+Using earlier versions may result in an error when setting Password, TImeout or Magic bytes (this is because this information needs ot be passed quickly to prevent bootloader session timeout).<br/>
+Version 1.0.9 fixes this by asking this information to the user beforehand, and only after having it on hand, will it initiate the bootloader session.<br/>
+( if using the GUI versionc you also need version  or above to work correctly with tsbloader_adv 1.0.9 or newer)</li>
+<li>You can specify the device Activation password on the command line (actually several individual passwords, if you are on a Daisy chain), thus eliminating the timeout you had in the original version before you could enter the password</li>
 <li>Communication relies on the OS buffers to detect arrival of device replies, which makes this code significantly faster
 to run (for example at 19 200 bps it can be up to 5x faster than tsb_original, which uses hard coded wait times).
 <li>Extremely verbose output: in case of error you are told exactly what is wrong
@@ -32,7 +42,7 @@ based on DTR transitions, similar to the Arduino implementation)</li>
 While this fix does not prevent them from booting, it forces the devices out of the "wrong password lock" before initiating any communication
 in order to prevent interferences from the Emergency erase confirmation.</li>
 <li>Adds the ability to store 2 user defined "Magic Bytes" (useful for model numbers, batch identification, etc)
-<li>What it does NOT DO: it will not produce the TSB binaries to load on your ATMEGA/ATTINY device. If you need that feature, please use TSB original.</li>
+<li><b>What it does NOT DO</b>: it will not produce the TSB binaries to load on your ATMEGA/ATTINY device. If you need that feature, please use TSB original.</li>
 </ul>
 </ul>
 

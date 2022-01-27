@@ -139,7 +139,7 @@ namespace Tsbloader_adv
                         Console.WriteLine("> Preparing to activate bootloader for device with password: {0}", pwd);
                         CollectUserOptions_AndUpdateCachedSessionData(ref cmd_parser, ref new_user_data);
 
-                        activation_result = tsb.ActivateBootloaderFromColdStart(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd);
+                        activation_result = tsb.ActivateBootloaderFromColdStart(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd, cmd_parser.verbose_output);
                     }
                     else
                     {
@@ -152,7 +152,7 @@ namespace Tsbloader_adv
                     Console.WriteLine("> Preparing to activate bootloader (no device password specified)");
                     CollectUserOptions_AndUpdateCachedSessionData(ref cmd_parser, ref new_user_data);
 
-                    activation_result = tsb.ActivateBootloaderFromColdStart(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd);
+                    activation_result = tsb.ActivateBootloaderFromColdStart(cmd_parser.port_name, cmd_parser.baudrate_bps, cmd_parser.prewait_ms, cmd_parser.replytimeout_ms, pwd, cmd_parser.verbose_output);
                 }
                 else if (cmd_parser.activation_mode == CommandLineParser.en_bootloader_activation_mode.LIVE_VIA_DYNAMIXEL)
                 {
@@ -168,7 +168,7 @@ namespace Tsbloader_adv
 
                     // baud after activation should not be hard coded as we may need to speak at higher bauds if going through the EROS board.
                     // timeout for bootloader activation must exceed the time set in the servo firmware.
-                    activation_result = tsb.ActivateBootloaderFromDynamixel(cmd_parser.port_name, cmd_parser.baudrate_bps, 9600, (byte) cmd_parser.dynid, 3500, 6000, TSBInterfacing.en_protocol_version.DYNAMIXEL_1);
+                    activation_result = tsb.ActivateBootloaderFromDynamixel(cmd_parser.port_name, cmd_parser.baudrate_bps, 9600, (byte) cmd_parser.dynid, 3500, 6000, TSBInterfacing.en_dyn_protocol_version.DYNAMIXEL_1, cmd_parser.verbose_output);
                 }
 
                 if (activation_result == true)
@@ -326,6 +326,7 @@ namespace Tsbloader_adv
                 {
                     Console.WriteLine();
                     Console.WriteLine("> Could not activate bootloader for the selected device.");
+                    Console.WriteLine("> Hint: Is password correct? Is BAUD rate correct?");
                     tsb.DeactivateBootloader();
                     errors_encountered = true;
                 }

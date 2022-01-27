@@ -244,11 +244,15 @@ Public Class frmGUIFlasher
         Dim sCommand As String = " -I" ' so that TSB always runs and shows device data even if no action specified
         Dim bMGbyte1 As Integer, bMGbyte2 As Integer
 
-
         If chkTSBConfigureTimeout.Checked Then
-            If CInt(txtTSBTimeout.Text) < 50 Then
-                MsgBox("TSB timeout setting is too small. Minimum we allow using this GUI is 50, to keep the bootloader accessible.")
+            If txtTSBTimeout.Text.Trim = "" Then
+                MsgBox("TSB timeout setting is is not specified.")
                 Return Nothing
+            Else
+                If CInt(txtTSBTimeout.Text) < 50 Then
+                    MsgBox("TSB timeout setting is too small. Minimum we allow using this GUI is 50, to keep the bootloader accessible.")
+                    Return Nothing
+                End If
             End If
         End If
 
@@ -542,7 +546,15 @@ Public Class frmGUIFlasher
             .Title = sDialogTitle
             .Filter = sExtensionsFilter
 
-            Dim sStartPath As String = System.IO.Path.GetDirectoryName(sCurrentFileName)
+            Dim sStartPath As String
+            If sCurrentFileName Is Nothing Then
+                sStartPath = ""
+            ElseIf sCurrentFileName.Trim = "" Then
+                sStartPath = ""
+            Else
+                sStartPath = System.IO.Path.GetDirectoryName(sCurrentFileName)
+            End If
+
             If System.IO.Directory.Exists(sStartPath) Then
                 .InitialDirectory = sStartPath
             End If
@@ -678,7 +690,13 @@ Public Class frmGUIFlasher
         If chkTSBMatchByteToServoID.Checked Then
             cboMgByte2.Enabled = False
 
-            Dim servoID As Integer = CInt(Me.txtServoID.Text) Mod 10
+            Dim servoID As Integer
+            If Me.txtServoID.Text.Trim = "" Then
+                servoID = 0
+            Else
+                servoID = CInt(Me.txtServoID.Text) Mod 10
+            End If
+
             For i As Integer = 0 To cboMgByte2.Items.Count - 1
                 If cboMgByte2.Items(i).Value = servoID Then
                     cboMgByte2.SelectedIndex = i

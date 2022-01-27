@@ -43,7 +43,7 @@ namespace Tsbloader_adv
         * -dynid Dynamixel ID of the device to activate in live mode.
         */
 
-         private const int default_prewait_ms = 300;
+         private const int default_prewait_ms = 1000;
          private const int default_replytimeout_ms = 1500;
 
         public enum en_bootloader_activation_mode
@@ -60,17 +60,18 @@ namespace Tsbloader_adv
         public List<String> bootloader_passwords;
 
         public string port_name, flash_file_name, eeprom_file_name;
-        public int baudrate_bps;
+        public int baudrate_bps = 0;
         public int prewait_ms, replytimeout_ms;
         public int dynid;
         public en_bootloader_activation_mode activation_mode;
         public bool tag_eepromfilename_withdatetimepwd;
         public bool tag_flashfilename_withdatetimepwd;
+        public bool verbose_output;
         
 
         private bool port_found_, baud_found_, prewait_found_, timeout_found_, ffile_found_, efile_found_, pwd_found_, xxx_found_, fop_found_,
             eop_found_, xop_found_, tagefile_found_, tagffile_found_, seederos_found_, patch_daisychain_found_, display_device_info_found_,
-            acmode_found_, dynid_found_;
+            acmode_found_, dynid_found_, verbose_found_;
 
         public CommandLineParser()
         {
@@ -78,7 +79,7 @@ namespace Tsbloader_adv
             bootloader_passwords = new List<string>();
 
             /* set defaults */
-            baudrate_bps = 9600;
+            verbose_output = false;
             prewait_ms = default_prewait_ms;
             replytimeout_ms = default_replytimeout_ms;
             activation_mode = en_bootloader_activation_mode.COLD_BOOT; // default is cold boot
@@ -139,8 +140,14 @@ namespace Tsbloader_adv
                             display_device_info_found_ = true;
                             bootloader_operations.Add(en_bootloader_operations.DISPLAY_DEVICE_INFO);
                             break;
-                       
-                         default:
+
+                        case "-v":
+                            if (verbose_found_) { throw_error_duplicate_param(split[0]); return false; }
+                            display_device_info_found_ = true;
+                            verbose_output = true;
+                            break;
+
+                        default:
                              throw_error_invalid_param(s);
                              return false;
                      }
@@ -208,7 +215,7 @@ namespace Tsbloader_adv
                             }
                             else
                             {
-                                /* if it success, the baud rate is already stored in baudrate_bps */
+                                /* if it success, it is already stored  */
                                 dynid_found_ = true;
                             }
                             break;
@@ -222,7 +229,7 @@ namespace Tsbloader_adv
                              }
                              else
                              {
-                                 /* if it success, the baud rate is already stored in baudrate_bps */
+                                 /* if it success, it is already stored */
                                  prewait_found_ = true;
                              }
 
@@ -384,7 +391,14 @@ namespace Tsbloader_adv
 
             if (!port_found_)
             {
-                throw_error(string.Format("Missing command line parameter '-port'{0}The serial port name must be specified for all operations.", Environment.NewLine));
+                throw_error(string.Format("Missing mandatory parameter '-port'{0}The serial port name must be specified for all operations.", Environment.NewLine));
+                return false;
+            }
+
+            /* if using seederos, the baud is not mandatory */
+            if (!baud_found_ && !seederos_found_ )
+            {
+                throw_error(string.Format("Missing mandatory parameter '-baud'{0}With the release of fixed baud versions bootloader versions, baud rate must now be explicitly specified (tip: old default was 9600 bps).", Environment.NewLine));
                 return false;
             }
 
@@ -444,8 +458,8 @@ namespace Tsbloader_adv
             Console.WriteLine(" Version " + version.ToString());
             Console.WriteLine("=======================================================================");
 
-            Console.WriteLine("\n-port=    [port name]");
-            Console.WriteLine("-baud=    [baud rate bps. Default is 9600]");
+            Console.WriteLine("\n-port=    [port name. MANDATORY]");
+            Console.WriteLine("-baud=    [baud rate bps. MANDATORY (except when using -seederos)]");
             Console.WriteLine("-acmode=  [bootloader activation mode: 'cold' (default), 'live']");
             Console.WriteLine("          'live' is currently only supported on Seed Robotics devices");
             Console.WriteLine("-prewait= [millisecs to wait after opening the port and before sending");
@@ -478,6 +492,7 @@ namespace Tsbloader_adv
             Console.WriteLine("-patchdaisychain [patches the UserData page in order to cope with");
             Console.WriteLine("                  a known issue operating in one-wire daisy chain");
             Console.WriteLine("                  (TSB bootloader versions earlier than 2017)]");
+            Console.WriteLine("-v         [Enables verbose output (more debug messages on error)]");
             Console.WriteLine("-?, -h     Displays help screen (this screen)");
             Console.WriteLine("Commands specific to Seed Robotics products:");
             Console.WriteLine("           -seederos=bron  [enables  bridge mode on an EROS main board]");
@@ -487,7 +502,7 @@ namespace Tsbloader_adv
             Console.WriteLine(" Some boards may autoreset the devices on Serial connection (Arduino style) ");
             Console.WriteLine("");
             Console.WriteLine("Examples:");
-            Console.WriteLine("'tsbloader_adv -port=COM2 -eop=rve -fop=ewv -efile=eeprom_backup.bin -ffile=firmware.hex'");
+            Console.WriteLine("'tsbloader_adv -port=COM2 -baud=9600 -eop=rve -fop=ewv -efile=eeprom_backup.bin -ffile=firmware.hex'");
             Console.WriteLine("This command will perform the operations in the order specified:");
             Console.WriteLine("\t-EEProm Read and save to the -efile (eeprom_backup.bin)");
             Console.WriteLine("\t-EEProm verify against the -efile (eeprom_backup.bin)");

@@ -27,7 +27,7 @@ namespace Tsbloader_adv
         public enum en_processor_type { ATTINY_OR_ATMEGANOBOOTLDR=0, ATMEGA=1 };
         public enum en_appjump_mode { RELATIVE_JUMP = 0, ABSOLUTE_JUMP=1 };
 
-        public enum en_protocol_version { DYNAMIXEL_1=1, DYNAMIXEL_2=2 }
+        public enum en_dyn_protocol_version { DYNAMIXEL_1=1, DYNAMIXEL_2=2 }
 
         public enum en_intelhex_validationresult
         {
@@ -109,7 +109,7 @@ namespace Tsbloader_adv
             cb_RequestDataFromUser = RequestDataFromUser_Function;
         }
 
-        public bool ActivateBootloaderFromColdStart(string port_name, int baud_bps, int pre_wait_ms, int reply_timeout_ms, string bootloader_pwd) {
+        public bool ActivateBootloaderFromColdStart(string port_name, int baud_bps, int pre_wait_ms, int reply_timeout_ms, string bootloader_pwd, bool verbose_output) {
             if (bootloader_active_ ) {
                 if ( bootloader_pwd == session_data_.password)
                 {
@@ -197,10 +197,10 @@ namespace Tsbloader_adv
                 cb_StatusUpdate(string.Format("WARNING: A Bootloader Password was given but the bootloader is accessible WITHOUT password.{0}Therefore, no password was used to activate the bootloader.", Environment.NewLine), -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             }
 
-            return GetBootloaderActivationData();
+            return GetBootloaderActivationData(verbose_output);
         }
 
-        public bool ActivateBootloaderFromDynamixel(string port_name, int baud_bps_beforeactivation, int baud_bps_afteractivation,  byte dynamixel_id, int device_jmp_delay_timeout_ms, int hostside_bootldr_reply_timeout_ms, en_protocol_version protocol_version)
+        public bool ActivateBootloaderFromDynamixel(string port_name, int baud_bps_beforeactivation, int baud_bps_afteractivation,  byte dynamixel_id, int device_jmp_delay_timeout_ms, int hostside_bootldr_reply_timeout_ms, en_dyn_protocol_version protocol_version, bool verbose_output)
         {
             if (bootloader_active_)
             {
@@ -247,7 +247,7 @@ namespace Tsbloader_adv
             */
 
             DynamixelCommander.DynamixelCommandGenerator dyncommander;
-            if (protocol_version == en_protocol_version.DYNAMIXEL_2) {
+            if (protocol_version == en_dyn_protocol_version.DYNAMIXEL_2) {
                 dyncommander = new DynamixelCommander.DynamixelCommandGenerator(DynamixelCommander.DynamixelCommandGenerator.en_DynProtocol_Version.Dynamixel_2);
             } else
             {
@@ -335,11 +335,11 @@ namespace Tsbloader_adv
                 return false;
             }
 
-            return GetBootloaderActivationData();
+            return GetBootloaderActivationData(verbose_output);
 
         }
 
-        private bool GetBootloaderActivationData()
+        private bool GetBootloaderActivationData(bool verbose_output)
         {
             /* pull reply in; we already waited for the reply and tested there is one, in the cycle above */
             byte[] reply_buffer = new byte[256];
@@ -352,20 +352,27 @@ namespace Tsbloader_adv
 
             if (reply_buffer[16] != CONFIRM_CHAR)
             {
-                cb_StatusUpdate(string.Format("{1}ERROR: Invalid reply from Bootloader. Confirmation character is invalid ('{0}')", reply_buffer[16], Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
-                cb_StatusUpdate(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
-                cb_StatusUpdate(string.Format("                '{0}'", BitConverter.ToString(reply_buffer, 0, System.Text.Encoding.ASCII.GetString(reply_buffer).Length)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                cb_StatusUpdate(string.Format("{1}ERROR: Invalid reply from Bootloader. Confirmation character is invalid ('{0}'; ASCII code: 0x{2:X2} )", reply_buffer[16], Environment.NewLine, reply_buffer[16]), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+
+                if (verbose_output)
+                {
+                    cb_StatusUpdate(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                    cb_StatusUpdate(string.Format("                '{0}'", BitConverter.ToString(reply_buffer, 0, System.Text.Encoding.ASCII.GetString(reply_buffer).Length)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                }
                 return false;
             }
             else if (System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3).ToUpper() != "TSB")
             {
                 cb_StatusUpdate(string.Format("{1}ERROR: Invalid Reply Header ('{0}')", System.Text.Encoding.ASCII.GetString(reply_buffer, 0, 3),Environment.NewLine), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
-                cb_StatusUpdate(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                if (verbose_output)
+                {
+                    cb_StatusUpdate(string.Format("Full reply was: '{0}'", System.Text.Encoding.ASCII.GetString(reply_buffer)), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE);
+                }
                 return false;
             }
             else
             {
-                //cb_StatusUpdate("Bootloader responded.");
+                //cb_StatusUpdate("Received bootloader response.", -1, false, en_cb_status_update_lineending.CBSU_NEWLINE);
             }
 
 
@@ -462,8 +469,9 @@ namespace Tsbloader_adv
 
             byte[] reply_buff = new byte[256];
 
-            cb_StatusUpdate("Reading boootloader configuration data... ", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
             if (!bootloader_active()) return false;
+
+            cb_StatusUpdate("Reading boootloader configuration data... ", -1, false, en_cb_status_update_lineending.CBSU_HOLD_LINE);
 
             /* BUGFIX for bootloaders that have the Daisy chain/password escape bug:
              * repeat reading the last page AT LEAST 2 times. The second time, if the daisy chain patch
@@ -676,7 +684,7 @@ namespace Tsbloader_adv
             }
             else if (nr_bytes_infile > session_data_.eeprom_size)
             {
-                cb_StatusUpdate(string.Format("ERROR{0}File is larger than EEPROM size. (file size ={ 1}, eeprom size = { 2 })", Environment.NewLine, nr_bytes_infile, session_data_.eeprom_size), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE); 
+                cb_StatusUpdate(string.Format("ERROR{0}File is larger than EEPROM size. (file size = {1}b, eeprom size = {2}b)", Environment.NewLine, nr_bytes_infile, session_data_.eeprom_size), -1, true, en_cb_status_update_lineending.CBSU_NEWLINE); 
                 return false;
             }
 
@@ -1373,7 +1381,8 @@ namespace Tsbloader_adv
                 {
                     large_buff_ix += session_data_.pagesize;
 
-                    // print every 2%
+                    // print every 2%. Reduce output to improve readibility and speed on occasions
+                    // where the output is redirected to another application.
                     if ( ((large_buff_ix * 100 / nr_bytes_to_write_rounded_to_pagesize) % 2) == 0)
                     {
                         cb_StatusUpdate(string.Format("{1} 0x{0:X}", large_buff_ix - 1, s_progress_preffix_print), (large_buff_ix * 100) / nr_bytes_to_write, false, en_cb_status_update_lineending.CBSU_CARRIAGE_RETURN_TO_BOL);

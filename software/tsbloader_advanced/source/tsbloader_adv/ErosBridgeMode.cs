@@ -12,7 +12,13 @@ namespace Tsbloader_adv
         {
             System.IO.Ports.SerialPort serial_port = new System.IO.Ports.SerialPort();
 
-            serial_port.BaudRate = cmd_parser.baudrate_bps;
+            if (cmd_parser.baudrate_bps > 0)
+            {
+                serial_port.BaudRate = cmd_parser.baudrate_bps; // if explicitly specified
+            } else
+            {
+                serial_port.BaudRate = 9600; // assume default bc this should be a USB connection where baud is irrelevant
+            }
             serial_port.PortName = cmd_parser.port_name;
             serial_port.Encoding = Encoding.ASCII;
 

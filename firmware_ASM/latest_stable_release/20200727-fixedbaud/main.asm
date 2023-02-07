@@ -104,11 +104,14 @@
 ; BUILD INFO
 ;-----------------------------------------------------------------------
 ; YY = Year - MM = Month - DD = Day
-.set    YY      =       20
-.set    MM      =       7
-.set    DD      =       27
+.set    YY      =       21
+.set    MM      =       12
+.set    DD      =       21
 ;
-.set BUILDSTATE = $F2   ; version management option
+.set BUILDSTATE = $F3   ; F1 fixed baud, pull up, derived from original (modified for fixed baud)
+						; F2 fixed baud, pull up, guaranteed minimum activation timeout in case of userpage data corruption
+						; F3 adds a CONSTANT with clock speed (Mhz) as word in the last page of memory (clock speed our defined CONSTANT)
+						
 ;
 ;-----------------------------------------------------------------------
 ; TSB / TSB-INSTALLER SWITCH
@@ -121,9 +124,20 @@
 ;-----------------------------------------------------------------------
 ; F_CPU and Baud rate setting
 ;-----------------------------------------------------------------------
-.equ	F_CPU	= 16000000
-.equ	BAUD	= 33333			; baudrate (for 56K, it is actually 55,555, so for BAUD_PRESC give an INT result of 8, we must set BAUD to 55500) 
-.equ	BAUD_PRESC	= (F_CPU/16/BAUD) - 1	; baud prescale
+.equ	F_CPU	= 20000000
+.equ	BAUD	= 33333			; baudrate (notice some possible wrong cals: example for 56K, it is actually 55,555, so for BAUD_PRESC give an INT result of 8, we must set BAUD to 55500) 
+
+.equ	BAUD_PRESCx10	= (F_CPU * 10/16/BAUD) - 10	; baud prescale (regular formula = F_CPU * 10/16/BAUD - 1 but we do it x10 to check the rounding)
+
+; arredondar acima se necesssario
+.if BAUD_PRESCx10 - ( (BAUD_PRESCx10 / 10) * 10 ) >= 5  ; calculate the remainder: we rely on the fact these are integer divisions. Therefore, dividing by 10, rounds DOWN in integer division
+	.equ BAUD_PRESC = (F_CPU/16/BAUD) 
+	.warning "Incrementing default BAUD_PRESC formula by 1 due to rounding."
+
+.else
+	.equ BAUD_PRESC = (F_CPU/16/BAUD) - 1
+	.warning "Using default BAUD_PRESC formula (no rounding up)"
+.endif
 
 .if BAUD_PRESC > 255
 .error "ERROR: BAUD RATE TOO LOW. WE ONLY WRITE THE UBRRL REGISTER, SO UBRR MUST BE <255 FOR THIS CLOCK FREQ AND BAUD"
@@ -233,6 +247,10 @@ RESET:
 		.message "PROVIDING FOR STACK BIGGER THAN 256 BYTES"
 .endif
 
+.ifndef DDRD2
+	.equ DDRD2 = DDD2
+.endif
+
 ;-----------------------------------------------------------------------
 ; ACTIVATION CHECK
 ;-----------------------------------------------------------------------
@@ -245,7 +263,7 @@ RESET:
 		;ldi	tmp2,( (1<<RXEN0) )   	; enable transmiter and receiver
 		;sts	UCSR0B,tmp2	
 
-		; Enable Pull up on Port D2
+		; Enable Pull up on Port D2 (PD2)
 		cbi DDRD, DDRD2
 		sbi PORTD, PORTD2
 
@@ -668,11 +686,6 @@ SendConfirm:
 ;-----------------------------------------------------------------------
 ; uses: tmp1 (transmit byte will be shifted out), tmp2 (bitcounter)
 ;
-; with different portlines defined for RX and TX ("Two-Wire")
-; => TX-line is actively driving high/low levels (LSTTL/HCMOS)
-;
-; with the same portline defined for RX and TX ("One-Wire")
-; => TX-line is acting like an open collector/drain with weak pullup
 
 SetTX:
 		ldi	tmp2,(1<<TXEN0)   	; enable transmitter (Receiver disabled)
@@ -723,10 +736,6 @@ APPJUMP:
 .endif
 
 
-;-----------------------------------------------------------------------
-; DEVICE INFO BLOCK = PERMANENT DATA
-;-----------------------------------------------------------------------
-
 DEVICEINFO:
 .message "DEVICE INFO BLOCK FOR ATMEGA"
 .db "TSB", low (BUILDDATE), high (BUILDDATE), BUILDSTATE
@@ -734,6 +743,17 @@ DEVICEINFO:
 .dw BOOTSTART-PAGESIZE
 .dw EEPROMEND
 .db $AA, $AA
+
+
+;-----------------------------------------------------------------------
+; DEVICE INFO BLOCK = PERMANENT DATA
+;-----------------------------------------------------------------------
+
+; set last word with the clock speed
+.org FLASHEND
+.dw (F_CPU/1000000)
+
+//.message "SAVING CLOCK SPEED IN LAST BYTE AS " (F_CPU/1000000) " Mhz"
 
 .message "ASSEMBLY OF TSB FOR ATMEGA SUCCESSFULLY FINISHED!"
 
